@@ -39,7 +39,7 @@ function MapRecenter({ startCoords, destCoords }) {
   return null;
 }
 
-export const TrackRide = ({ routeState, onBack, onProfileClick }) => {
+export const TrackRide = ({ routeState, onBack, onProfileClick, onNavigate }) => {
   // Navigation states
   const [currentHeaderTab, setCurrentHeaderTab] = useState('dashboard');
   const [errorMsg, setErrorMsg] = useState('');
@@ -159,7 +159,7 @@ export const TrackRide = ({ routeState, onBack, onProfileClick }) => {
       <Header
         onProfileClick={onProfileClick}
         currentTab={currentHeaderTab}
-        setCurrentTab={setCurrentHeaderTab}
+        setCurrentTab={(tabId) => onNavigate('dashboard', { activeTab: tabId })}
         showTabs={true}
       />
 

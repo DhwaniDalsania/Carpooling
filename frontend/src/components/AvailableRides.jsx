@@ -104,7 +104,7 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
       <Header
         onProfileClick={onProfileClick}
         currentTab={currentHeaderTab}
-        setCurrentTab={setCurrentHeaderTab}
+        setCurrentTab={(tabId) => onNavigate('dashboard', { activeTab: tabId })}
         showTabs={true}
       />
 

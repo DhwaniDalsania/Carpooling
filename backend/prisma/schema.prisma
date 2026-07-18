@@ -36,6 +36,7 @@ model User {
   role            Role         @default(employee)
   organizationId  String
   photoUrl        String?
+  phone           String?
   department      String?
   managerName     String?
   location        String?
@@ -51,6 +52,8 @@ model User {
   wallet          Wallet?
   transactions    Transaction[]
   messages        Message[]
+
+  @@index([organizationId])
 }
 
 enum Role {
@@ -72,6 +75,8 @@ model Vehicle {
   user               User          @relation(fields: [userId], references: [id])
   rides              Ride[]
   trips              Trip[]
+
+  @@index([userId])
 }
 
 enum VehicleStatus {
@@ -103,6 +108,9 @@ model Ride {
   vehicle        Vehicle     @relation(fields: [vehicleId], references: [id])
   bookings       Booking[]
   trips          Trip[]
+
+  @@index([driverId])
+  @@index([vehicleId])
 }
 
 enum RideStatus {
@@ -124,6 +132,9 @@ model Booking {
 
   ride        Ride          @relation(fields: [rideId], references: [id])
   passenger   User          @relation(fields: [passengerId], references: [id])
+
+  @@index([rideId])
+  @@index([passengerId])
 }
 
 enum BookingStatus {
@@ -151,6 +162,10 @@ model Trip {
   passengers  TripPassenger[]
   transactions Transaction[]
   messages    Message[]
+
+  @@index([rideId])
+  @@index([driverId])
+  @@index([vehicleId])
 }
 
 enum TripStatus {
@@ -196,6 +211,9 @@ model Transaction {
 
   user      User              @relation(fields: [userId], references: [id])
   trip      Trip?             @relation(fields: [tripId], references: [id])
+
+  @@index([userId])
+  @@index([tripId])
 }
 
 enum TransactionType {
@@ -221,4 +239,7 @@ model Message {
 
   trip      Trip     @relation(fields: [tripId], references: [id])
   sender    User     @relation(fields: [senderId], references: [id])
+
+  @@index([tripId])
+  @@index([senderId])
 }

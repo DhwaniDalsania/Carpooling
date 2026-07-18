@@ -19,7 +19,7 @@ function safeUser(user) {
 // Headers: Authorization: Bearer <token>
 // ─────────────────────────────────────────────────────────────────────────────
 router.put('/profile', requireAuth, async (req, res) => {
-  const { name, photo } = req.body;
+  const { name, photo, phone } = req.body;
 
   try {
     // Update user properties in Postgres via Prisma
@@ -29,6 +29,7 @@ router.put('/profile', requireAuth, async (req, res) => {
         data: {
           name: name !== undefined ? name : undefined,
           photoUrl: photo !== undefined ? photo : undefined,
+          phone: phone !== undefined ? phone : undefined,
         },
         include: { organization: true },
       })

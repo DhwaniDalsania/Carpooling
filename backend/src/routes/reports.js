@@ -13,7 +13,7 @@ const router = express.Router();
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/summary', requireAuth, async (req, res) => {
   try {
-    // 1. Fetch organization parameters for cost calculations
+    // Query user profile and completed trips sequentially to respect connection_limit=1
     const user = await withRetry(() =>
       prisma.user.findUnique({
         where: { id: req.user.id },
@@ -21,12 +21,6 @@ router.get('/summary', requireAuth, async (req, res) => {
       })
     );
 
-    const org = user?.organization;
-    const fuelCostPerLitre = org?.fuelCostPerLitre || 100.0; // default ₹100/L
-    const costPerKm = org?.costPerKm || 6.0;               // default ₹6/km
-    const travelCostPerKm = org?.travelCostPerKm || 12.0;
-
-    // 2. Query completed trips for the user (either driving or riding)
     const completedTrips = await withRetry(() =>
       prisma.trip.findMany({
         where: {
@@ -42,6 +36,11 @@ router.get('/summary', requireAuth, async (req, res) => {
         }
       })
     );
+
+    const org = user?.organization;
+    const fuelCostPerLitre = org?.fuelCostPerLitre || 100.0; // default ₹100/L
+    const costPerKm = org?.costPerKm || 6.0;               // default ₹6/km
+    const travelCostPerKm = org?.travelCostPerKm || 12.0;
 
     // 3. Compute baseline metrics
     let totalTrips = completedTrips.length;

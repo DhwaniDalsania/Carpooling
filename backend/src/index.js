@@ -106,3 +106,14 @@ server.listen(PORT, () => {
   console.log(`🚀 Backend running at http://localhost:${PORT}`);
   console.log(`   Socket.io: /tracking and /chat namespaces ready`);
 });
+
+// Keeps your Free Tier Neon DB awake during the hackathon
+const { prisma } = require('./lib/prisma');
+setInterval(async () => {
+  try {
+    await prisma.$executeRawUnsafe('SELECT 1;'); 
+    console.log('Neon Keep-Alive: Ping successful');
+  } catch (err) {
+    console.error('Neon Keep-Alive Error:', err.message);
+  }
+}, 4 * 60 * 1000); // 4 minutes

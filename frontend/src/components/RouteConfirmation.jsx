@@ -47,18 +47,34 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
   const [errorMsg, setErrorMsg] = useState('');
 
   // Geocoding and OSRM states
-  const [startCoords, setStartCoords] = useState(null); // [lat, lng]
-  const [destCoords, setDestCoords] = useState(null); // [lat, lng]
+  const [startCoords, setStartCoords] = useState(
+    routeState?.pickupLat && routeState?.pickupLng ? [routeState.pickupLat, routeState.pickupLng] : null
+  );
+  const [destCoords, setDestCoords] = useState(
+    routeState?.destLat && routeState?.destLng ? [routeState.destLat, routeState.destLng] : null
+  );
   const [distance, setDistance] = useState(0); // km
   const [duration, setDuration] = useState(0); // mins
   const [routePath, setRoutePath] = useState([]); // array of [lat, lng]
   const [routeGeoJson, setRouteGeoJson] = useState(null); // full JSON
   const [isGeocoding, setIsGeocoding] = useState(false);
 
+  // Editable Driver Fare per Seat (Requirement 8)
+  const [driverFare, setDriverFare] = useState(0);
+
   // Fallbacks if data is missing
   const pickup = routeState?.pickupLocation || '';
   const destination = routeState?.destination || '';
   const rideType = routeState?.type || 'find'; // 'find' or 'offer'
+
+  // Initialize and update driver fare whenever distance resolves
+  useEffect(() => {
+    if (distance > 0 && rideType === 'offer') {
+      const travelCost = user?.organization?.travelCostPerKm || 12.0;
+      const computedEst = (distance * travelCost) / (parseInt(routeState?.seats, 10) || 1);
+      setDriverFare(Math.max(1, Math.round(computedEst)));
+    }
+  }, [distance, user, routeState, rideType]);
 
   // Format date/time for schedule select field
   const getScheduleText = () => {
@@ -75,7 +91,7 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
     }
   };
 
-  // Perform geocoding & route calculations on component mount
+  // Perform OSRM route calculations on component mount
   useEffect(() => {
     const calculateRoute = async () => {
       if (!pickup || !destination) {
@@ -87,35 +103,36 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
       setErrorMsg('');
 
       try {
+        let pCoords = startCoords;
+        let dCoords = destCoords;
         const userAgentHeader = {
           'User-Agent': 'EnterpriseCarpoolingHackathon/1.0 (dhwanidalsania@example.com)'
         };
 
-        // 1. Geocode Pickup address via Nominatim
-        const pickupUrl = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(pickup)}`;
-        const pResponse = await fetch(pickupUrl, { headers: userAgentHeader });
-        const pData = await pResponse.json();
-        
-        if (!pData || pData.length === 0) {
-          throw new Error(`Could not find coordinate for pickup location: "${pickup}". Try a larger city name.`);
-        }
-        
-        const pCoords = [parseFloat(pData[0].lat), parseFloat(pData[0].lon)];
-        setStartCoords(pCoords);
-
-        // 2. Geocode Destination address via Nominatim
-        const destUrl = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(destination)}`;
-        const dResponse = await fetch(destUrl, { headers: userAgentHeader });
-        const dData = await dResponse.json();
-
-        if (!dData || dData.length === 0) {
-          throw new Error(`Could not find coordinate for destination location: "${destination}". Try a larger city name.`);
+        // Fallback geocode if coordinates are not passed down
+        if (!pCoords) {
+          const pickupUrl = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(pickup)}`;
+          const pResponse = await fetch(pickupUrl, { headers: userAgentHeader });
+          const pData = await pResponse.json();
+          if (!pData || pData.length === 0) {
+            throw new Error(`Could not find coordinate for pickup location: "${pickup}".`);
+          }
+          pCoords = [parseFloat(pData[0].lat), parseFloat(pData[0].lon)];
+          setStartCoords(pCoords);
         }
 
-        const dCoords = [parseFloat(dData[0].lat), parseFloat(dData[0].lon)];
-        setDestCoords(dCoords);
+        if (!dCoords) {
+          const destUrl = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(destination)}`;
+          const dResponse = await fetch(destUrl, { headers: userAgentHeader });
+          const dData = await dResponse.json();
+          if (!dData || dData.length === 0) {
+            throw new Error(`Could not find coordinate for destination location: "${destination}".`);
+          }
+          dCoords = [parseFloat(dData[0].lat), parseFloat(dData[0].lon)];
+          setDestCoords(dCoords);
+        }
 
-        // 3. Query route polyline from OSRM
+        // Query route polyline from OSRM
         const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=full&geometries=geojson`;
         const oResponse = await fetch(osrmUrl);
         const oData = await oResponse.json();
@@ -129,7 +146,6 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
         setDuration(Math.round(route.duration / 60)); // convert to minutes
         setRouteGeoJson(route.geometry);
 
-        // Map coordinates from [lon, lat] (OSRM) to [lat, lon] (Leaflet)
         const coords = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
         setRoutePath(coords);
 
@@ -149,6 +165,19 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
     if (!startCoords || !destCoords) {
       alert('Cannot confirm: Coordinates are not resolved yet.');
       return;
+    }
+
+    if (rideType === 'offer') {
+      if (isNaN(driverFare) || driverFare <= 0) {
+        alert('Driver fare must be greater than 0.');
+        return;
+      }
+      const travelCost = user?.organization?.travelCostPerKm || 12.0;
+      const baseEst = (distance * travelCost) / (parseInt(routeState?.seats, 10) || 1);
+      if (driverFare > Math.max(1, Math.round(baseEst)) * 5) {
+        alert('Driver fare is unreasonably high. Please decrease it.');
+        return;
+      }
     }
 
     setIsConfirming(true);
@@ -171,8 +200,8 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
             destLat: destCoords[0],
             destLng: destCoords[1],
             datetime: routeState.dateTime,
-            availableSeats: routeState.seats,
-            farePerSeat: routeState.fare,
+            availableSeats: parseInt(routeState.seats, 10),
+            farePerSeat: driverFare,
             vehicleId: routeState.vehicleId || 'v1',
             routeGeoJson: routeGeoJson,
             distanceKm: distance
@@ -188,7 +217,7 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
         setTimeout(() => {
           setConfirmSuccess(false);
           // Redirect to My Trips on success
-          onNavigate('dashboard', null);
+          onNavigate('dashboard', { activeTab: 'trips' });
         }, 1500);
 
       } else {
@@ -233,7 +262,7 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
       <Header
         onProfileClick={onProfileClick}
         currentTab={currentHeaderTab}
-        setCurrentTab={setCurrentHeaderTab}
+        setCurrentTab={(tabId) => onNavigate('dashboard', { activeTab: tabId })}
         showTabs={true}
       />
 
@@ -311,6 +340,29 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                     </div>
                   </div>
 
+                  {/* Driver Editable Fare Input (Requirement 8) */}
+                  {rideType === 'offer' && (
+                    <div className="form-group" style={{ marginTop: '16px' }}>
+                      <label className="form-label">Driver Fare (₹ per seat)</label>
+                      <div className="input-icon-wrapper">
+                        <div className="input-icon-left" style={{ fontWeight: '700', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px' }}>
+                          ₹
+                        </div>
+                        <input
+                          type="number"
+                          className="input-field"
+                          style={{ paddingLeft: '32px' }}
+                          value={driverFare}
+                          onChange={(e) => setDriverFare(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          required
+                        />
+                      </div>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                        Based on distance. You can increase or decrease this.
+                      </span>
+                    </div>
+                  )}
+
                 </div>
 
                 {/* Confirm Button at Bottom */}
@@ -369,7 +421,9 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                       {rideType === 'find' ? 'Est. Fare' : 'Total Fare'}
                     </span>
                     <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--color-brand)' }}>
-                      {rideType === 'find' ? '$12.00' : `$${(routeState?.fare || 10) * (routeState?.seats || 1)}.00`}
+                      ₹ {rideType === 'find' 
+                        ? Math.max(1, Math.round((distance * (user?.organization?.travelCostPerKm || 12.0)) / (parseInt(routeState?.seats, 10) || 1)))
+                        : driverFare * (parseInt(routeState?.seats, 10) || 1)}
                     </div>
                   </div>
                 </div>

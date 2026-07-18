@@ -12,31 +12,31 @@ import AvailableRides from './components/AvailableRides';
 import TrackRide from './components/TrackRide';
 
 function MainAppContent() {
-  const { user } = useAuth();
+  const { user, isInitializing } = useAuth();
   const [screen, setScreen] = useState('splash');
   const [routeState, setRouteState] = useState(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [splashFinished, setSplashFinished] = useState(false);
 
-  // Automatically transition to the dashboard once authenticated.
-  // Automatically redirect back to the login screen if the user logs out.
+  // Transition screen when both the splash animation finishes and token validation resolves
   useEffect(() => {
-    if (user) {
-      // Avoid resetting search/available-rides screens on user change if already in active flow
-      if (screen !== 'route-confirmation' && screen !== 'available-rides') {
-        setScreen('dashboard');
-      }
-    } else if (screen === 'dashboard' || screen === 'route-confirmation' || screen === 'available-rides') {
+    if (isInitializing) return;
+
+    if (splashFinished) {
+      setScreen(user ? 'dashboard' : 'login');
+    }
+  }, [isInitializing, splashFinished, user]);
+
+  // Redirect to login if user becomes unauthenticated (e.g. logs out) while on authenticated screens
+  useEffect(() => {
+    if (!isInitializing && !user && (screen === 'dashboard' || screen === 'route-confirmation' || screen === 'available-rides' || screen === 'track-ride')) {
       setScreen('login');
       setRouteState(null);
     }
-  }, [user, screen]);
+  }, [user, isInitializing, screen]);
 
   const handleSplashFinish = () => {
-    if (user) {
-      setScreen('dashboard');
-    } else {
-      setScreen('login');
-    }
+    setSplashFinished(true);
   };
 
   const handleNavigate = (targetScreen, stateData) => {
@@ -121,6 +121,7 @@ function MainAppContent() {
             routeState={routeState}
             onBack={() => handleNavigate('dashboard', { activeTab: 'trips' })}
             onProfileClick={() => setIsProfileOpen(true)}
+            onNavigate={handleNavigate}
           />
 
           <ProfileModal

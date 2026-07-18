@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
@@ -33,6 +33,34 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  // Restore session from localStorage on application boot
+  useEffect(() => {
+    const restoreSession = async () => {
+      const storedToken = localStorage.getItem('jwt_token');
+      if (storedToken) {
+        try {
+          const response = await fetch('/api/auth/me', {
+            headers: { 'Authorization': `Bearer ${storedToken}` }
+          });
+          const data = await parseJsonResponse(response);
+
+          if (response.ok && data.user) {
+            setToken(storedToken);
+            setUser(data.user);
+          } else {
+            localStorage.removeItem('jwt_token');
+          }
+        } catch (err) {
+          console.error('[Session Restoration Failed]', err);
+        }
+      }
+      setIsInitializing(false);
+    };
+
+    restoreSession();
+  }, []);
 
   const login = async (email, password) => {
     setIsLoading(true);
@@ -50,6 +78,8 @@ export const AuthProvider = ({ children }) => {
         throw new Error(data.message || 'Login failed');
       }
 
+      // Persist token in localStorage
+      localStorage.setItem('jwt_token', data.token);
       setToken(data.token);
       setUser(data.user);
       return data.user;
@@ -93,7 +123,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const updateProfile = async (name, photo) => {
+  const updateProfile = async (name, photo, phone) => {
     if (!user) return;
     setIsLoading(true);
     setError(null);
@@ -104,7 +134,7 @@ export const AuthProvider = ({ children }) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}` 
         },
-        body: JSON.stringify({ email: user.email, name, photo })
+        body: JSON.stringify({ email: user.email, name, photo, phone })
       });
       
       const data = await parseJsonResponse(response);
@@ -124,6 +154,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    localStorage.removeItem('jwt_token');
     setToken(null);
     setUser(null);
     setError(null);
@@ -136,6 +167,7 @@ export const AuthProvider = ({ children }) => {
         user,
         error,
         isLoading,
+        isInitializing,
         login,
         register,
         updateProfile,

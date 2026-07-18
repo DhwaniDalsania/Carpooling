@@ -80,24 +80,42 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ message: `availableSeats (${seatsInt}) cannot exceed vehicle seating capacity (${vehicle.seatingCapacity}).` });
     }
 
-    const ride = await withRetry(() =>
-      prisma.ride.create({
-        data: {
-          driverId: req.user.id,
-          vehicleId,
-          pickupAddress,
-          pickupLat: pLat,
-          pickupLng: pLng,
-          destAddress,
-          destLat: dLat,
-          destLng: dLng,
-          datetime: new Date(datetime),
-          availableSeats: seatsInt,
-          farePerSeat: fareFloat,
-          routeGeoJson: routeGeoJson || null,
-          distanceKm: dist,
-          status: 'active'
-        }
+    // "My Trips" is backed by Trip records, so create the ride session when
+    // the driver publishes the offer, not only after the first passenger books.
+    // Keeping both inserts in one transaction prevents an offer from being
+    // published without showing up in the driver's trip list.
+    const { ride } = await withRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const createdRide = await tx.ride.create({
+          data: {
+            driverId: req.user.id,
+            vehicleId,
+            pickupAddress,
+            pickupLat: pLat,
+            pickupLng: pLng,
+            destAddress,
+            destLat: dLat,
+            destLng: dLng,
+            datetime: new Date(datetime),
+            availableSeats: seatsInt,
+            farePerSeat: fareFloat,
+            routeGeoJson: routeGeoJson || null,
+            distanceKm: dist,
+            status: 'active'
+          }
+        });
+
+        await tx.trip.create({
+          data: {
+            rideId: createdRide.id,
+            driverId: req.user.id,
+            vehicleId,
+            status: 'booked',
+            fare: 0
+          }
+        });
+
+        return { ride: createdRide };
       })
     );
 
@@ -126,9 +144,22 @@ router.get('/search', async (req, res) => {
     const dLat = parseFloat(destLat || req.query.dest_lat);
     const dLng = parseFloat(destLng || req.query.dest_lng);
 
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const now = new Date();
+    const currentDateInIst = new Date(now.getTime() + istOffset)
+      .toISOString()
+      .slice(0, 10);
+    const searchDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : currentDateInIst;
+    const startOfSearchDate = new Date(`${searchDate}T00:00:00+05:30`);
+    const endOfSearchDate = new Date(`${searchDate}T23:59:59.999+05:30`);
+
     let whereClause = {
       status: 'active',
-      availableSeats: { gte: seatsInt }
+      availableSeats: { gte: seatsInt },
+      datetime: {
+        gte: startOfSearchDate,
+        lte: endOfSearchDate
+      }
     };
 
     // If locations are provided, apply bounding box filters (approx. 20km radius)
@@ -152,22 +183,7 @@ router.get('/search', async (req, res) => {
       })
     );
 
-    // Fallback: If no rides match coordinate criteria, return all active rides in the db
-    // to guarantee the hackathon search demo displays cards and does not stay blank.
-    if (rides.length === 0) {
-      rides = await withRetry(() =>
-        prisma.ride.findMany({
-          where: { status: 'active', availableSeats: { gte: seatsInt } },
-          include: {
-            driver: {
-              select: { id: true, name: true, photoUrl: true }
-            },
-            vehicle: true
-          },
-          orderBy: { datetime: 'asc' }
-        })
-      );
-    }
+
 
     // Sort rides by Euclidean distance to pickup coordinates if provided
     if (!isNaN(pLat) && !isNaN(pLng)) {

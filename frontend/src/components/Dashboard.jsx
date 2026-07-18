@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, ArrowUpDown, Clock, Users, ChevronDown, Repeat, 
-  DollarSign, Car, Calendar, Navigation, MessageSquare, 
+  Car, Calendar, Navigation, MessageSquare, 
   Phone, MapPin, MoreVertical, Plus, Trash2, Wallet, Settings, Activity,
   ArrowLeft, Check, Loader2, ArrowRight, Play, CheckCircle2, Send, PhoneOff,
   CreditCard, Smartphone, CheckCircle, RefreshCw
@@ -14,8 +14,92 @@ import { useAuth } from '../context/AuthContext';
 import Header from './Header';
 import Sidebar from './Sidebar';
 
+// Simple geocoding cache to reduce redundant OS Nominatim API calls (Requirement 3)
+const nominatimCache = {};
+
 export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
-  const { user, token } = useAuth();
+  const { user, token, updateProfile } = useAuth();
+  
+  const getSidebarLabel = () => {
+    switch (currentHeaderTab) {
+      case 'dashboard': return 'Dashboard';
+      case 'trips': return 'My Trips';
+      case 'vehicle': return 'My Vehicle';
+      case 'history': return 'Ride History';
+      case 'wallet': return 'Wallet & Cards';
+      case 'report': return 'Reports';
+      case 'setting': return 'System Settings';
+      default: return 'Carpooling';
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    let text = status;
+    let bgColor = 'rgba(255,255,255,0.05)';
+    let color = 'var(--text-secondary)';
+
+    if (status === 'booked') {
+      text = 'Booked';
+      bgColor = 'rgba(59, 130, 246, 0.15)';
+      color = '#3b82f6';
+    } else if (status === 'started') {
+      text = 'Started';
+      bgColor = 'rgba(245, 158, 11, 0.15)';
+      color = '#f59e0b';
+    } else if (status === 'in_progress') {
+      text = 'In Progress';
+      bgColor = 'rgba(16, 185, 129, 0.15)';
+      color = 'var(--color-brand)';
+    } else if (status === 'completed') {
+      text = 'Completed';
+      bgColor = 'rgba(16, 185, 129, 0.15)';
+      color = 'var(--color-brand)';
+    } else if (status === 'payment_pending') {
+      text = 'Payment Pending';
+      bgColor = 'rgba(239, 68, 68, 0.15)';
+      color = '#ef4444';
+    } else if (status === 'payment_completed') {
+      text = 'Payment Completed';
+      bgColor = 'rgba(16, 185, 129, 0.15)';
+      color = 'var(--color-brand)';
+    }
+
+    return (
+      <span style={{
+        fontSize: '11px',
+        fontWeight: '700',
+        padding: '3px 8px',
+        borderRadius: '4px',
+        backgroundColor: bgColor,
+        color: color
+      }}>
+        {text}
+      </span>
+    );
+  };
+
+  const formatRideDate = (datetimeStr) => {
+    try {
+      if (!datetimeStr) return '';
+      const date = new Date(datetimeStr);
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      const day = date.getDate();
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const month = monthNames[date.getMonth()];
+      const year = date.getFullYear().toString().substring(2);
+      
+      return `${hours}:${minutes} ${day}/${month}/${year}`;
+    } catch {
+      return datetimeStr || '';
+    }
+  };
+
+  const formatTransactionType = (type) => {
+    if (type === 'payment') return 'Ride Payment';
+    if (type === 'recharge') return 'Wallet Recharge';
+    return type;
+  };
   
   // Dashboard Tabs (dashboard, trips, vehicle, history, wallet, setting, report)
   const [currentHeaderTab, setCurrentHeaderTab] = useState('dashboard');
@@ -24,20 +108,30 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   // Trip details drill-down state
   const [selectedTrip, setSelectedTrip] = useState(null);
 
-  // Find a Ride Form States
+  // Address search query suggestion states
+  const [pickupSuggestions, setPickupSuggestions] = useState([]);
+  const [destSuggestions, setDestSuggestions] = useState([]);
+  const [offerPickupSuggestions, setOfferPickupSuggestions] = useState([]);
+  const [offerDestSuggestions, setOfferDestSuggestions] = useState([]);
+
+  // Resolved coordinate selection states (Requirement 2)
+  const [pickupCoords, setPickupCoords] = useState(null); // { address, lat, lng }
+  const [destCoords, setDestCoords] = useState(null); // { address, lat, lng }
+  const [offerPickupCoords, setOfferPickupCoords] = useState(null); // { address, lat, lng }
+  const [offerDestCoords, setOfferDestCoords] = useState(null); // { address, lat, lng }
+
+  // Input textbox states
   const [pickupLoc, setPickupLoc] = useState('');
   const [destLoc, setDestLoc] = useState('');
   const [rideDate, setRideDate] = useState('');
   const [rideTime, setRideTime] = useState('');
   const [numSeats, setNumSeats] = useState('1');
-  const [isRecurring, setIsRecurring] = useState(false);
 
   // Offer a Ride Form States
   const [offerPickup, setOfferPickup] = useState('');
   const [offerDest, setOfferDest] = useState('');
   const [offerDateTime, setOfferDateTime] = useState('');
   const [offerSeats, setOfferSeats] = useState('1');
-  const [offerFare, setOfferFare] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState('');
 
   // Dynamic lists from backend
@@ -54,9 +148,8 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   const [rechargeUpiId, setRechargeUpiId] = useState('');
 
   // Payment Screen States (Screen 14)
-  // activePaymentMode: null | 'select' | 'gateway' | 'success'
   const [activePaymentMode, setActivePaymentMode] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState('wallet'); // 'cash' | 'card' | 'upi' | 'wallet'
+  const [paymentMethod, setPaymentMethod] = useState('wallet'); 
   const [razorpayOrder, setRazorpayOrder] = useState(null);
   const [cardNum, setCardNum] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
@@ -74,14 +167,14 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   const messagesEndRef = useRef(null);
   const chatInputRef = useRef(null);
 
-  const focusChatInput = () => {
-    if (chatInputRef.current) {
-      chatInputRef.current.focus();
-    }
-  };
+  const [phoneNum, setPhoneNum] = useState('');
 
-  // Simulated calling modal state
-  const [callingUser, setCallingUser] = useState(null);
+  // Prefill phone input from user context once loaded
+  useEffect(() => {
+    if (user?.phone) {
+      setPhoneNum(user.phone);
+    }
+  }, [user]);
 
   // Add Vehicle Form States
   const [newModel, setNewModel] = useState('');
@@ -89,6 +182,10 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   const [newCapacity, setNewCapacity] = useState('4');
   const [newActive, setNewActive] = useState(true);
   const [vehicleSuccess, setVehicleSuccess] = useState('');
+  const [vehicleError, setVehicleError] = useState(''); // Dedicated error state (Requirement 7)
+
+  // Debounce timers reference
+  const debounceTimersRef = useRef({});
 
   // Sync tab with external navigation state updates
   useEffect(() => {
@@ -96,6 +193,56 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       setCurrentHeaderTab(dashboardState.activeTab);
     }
   }, [dashboardState]);
+
+  // ── Address Autocomplete Suggestions Query (Nominatim) ─────────────────────
+  
+  const fetchSuggestions = async (query, setSuggestions) => {
+    const trimmed = query.trim();
+    if (trimmed.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+
+    if (nominatimCache[trimmed]) {
+      setSuggestions(nominatimCache[trimmed]);
+      return;
+    }
+
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(trimmed)}`;
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'EnterpriseCarpoolingHackathon/1.0 (dhwanidalsania@example.com)'
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const results = data.map(item => ({
+          address: item.display_name,
+          lat: parseFloat(item.lat),
+          lng: parseFloat(item.lon)
+        }));
+        nominatimCache[trimmed] = results;
+        setSuggestions(results);
+      }
+    } catch (err) {
+      console.error('[Nominatim Error]', err);
+    }
+  };
+
+  const handleLocationInputChange = (value, inputName, setInputVal, setSuggestions) => {
+    setInputVal(value);
+    
+    // Clear existing timer
+    if (debounceTimersRef.current[inputName]) {
+      clearTimeout(debounceTimersRef.current[inputName]);
+    }
+
+    // Debounce search requests by 300ms (Requirement 2)
+    debounceTimersRef.current[inputName] = setTimeout(() => {
+      fetchSuggestions(value, setSuggestions);
+    }, 300);
+  };
 
   // ── Database Fetching Handlers ─────────────────────────────────────────────
   
@@ -120,6 +267,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
   const fetchTrips = async () => {
     if (!token) return;
+    setIsLoadingData(true);
     try {
       const res = await fetch('/api/trips?history=false', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -130,6 +278,8 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       }
     } catch (err) {
       console.error('Failed to fetch active trips', err);
+    } finally {
+      setIsLoadingData(false);
     }
   };
 
@@ -181,84 +331,42 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
   const fetchChatHistory = async (tripId) => {
     if (!token || !tripId) return;
-
-    // Dummy messages for UI testing when DB is unavailable
-    const DUMMY_MESSAGES = [
-      {
-        id: 'dummy-1',
-        tripId,
-        senderId: 'driver-dummy',
-        text: "Hi! I'm on my way. Should be there in ~5 mins 🚗",
-        createdAt: new Date(Date.now() - 8 * 60000).toISOString(),
-        sender: { id: 'driver-dummy', name: 'Priya Sharma', photoUrl: null }
-      },
-      {
-        id: 'dummy-2',
-        tripId,
-        senderId: 'passenger-dummy',
-        text: "Great! I'm waiting at the gate.",
-        createdAt: new Date(Date.now() - 6 * 60000).toISOString(),
-        sender: { id: 'passenger-dummy', name: 'Rohan Verma', photoUrl: null }
-      },
-      {
-        id: 'dummy-3',
-        tripId,
-        senderId: 'driver-dummy',
-        text: 'Stuck at a signal near Koramangala 7th block, 2 min delay.',
-        createdAt: new Date(Date.now() - 4 * 60000).toISOString(),
-        sender: { id: 'driver-dummy', name: 'Priya Sharma', photoUrl: null }
-      },
-      {
-        id: 'dummy-4',
-        tripId,
-        senderId: 'passenger-dummy',
-        text: 'No worries, take your time! 😊',
-        createdAt: new Date(Date.now() - 2 * 60000).toISOString(),
-        sender: { id: 'passenger-dummy', name: 'Rohan Verma', photoUrl: null }
-      },
-      {
-        id: 'dummy-5',
-        tripId,
-        senderId: 'driver-dummy',
-        text: "Almost there! Can see the building now.",
-        createdAt: new Date(Date.now() - 30000).toISOString(),
-        sender: { id: 'driver-dummy', name: 'Priya Sharma', photoUrl: null }
-      },
-    ];
-
     try {
       const res = await fetch(`/api/trips/${tripId}/messages`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
         const data = await res.json();
-        // Use real data if available, otherwise fall back to dummy data
-        setChatMessages(data.length > 0 ? data : DUMMY_MESSAGES);
-      } else {
-        setChatMessages(DUMMY_MESSAGES);
+        setChatMessages(data);
       }
     } catch (err) {
-      console.error('Failed to fetch chat history, using dummy data', err);
-      setChatMessages(DUMMY_MESSAGES);
+      console.error('Failed to fetch chat history', err);
     }
   };
 
-  // Sync data loaders on mount + 5s client polling loop
+  // Load data dynamically based on active tab switching
   useEffect(() => {
     if (!token) return;
 
     fetchVehicles();
     fetchTrips();
-    fetchHistory();
-    fetchWalletData();
-    fetchReportSummary();
+
+    if (currentHeaderTab === 'history') {
+      fetchHistory();
+    } else if (currentHeaderTab === 'wallet') {
+      fetchWalletData();
+    } else if (currentHeaderTab === 'report') {
+      fetchReportSummary();
+    }
+  }, [token, currentHeaderTab]);
+
+  // Polling loop: Only refresh active trips every 10 seconds to keep UI responsive without DB locks
+  useEffect(() => {
+    if (!token) return;
 
     const interval = setInterval(() => {
       fetchTrips();
-      fetchHistory();
-      fetchWalletData();
-      fetchReportSummary();
-    }, 5000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [token]);
@@ -284,10 +392,8 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       return;
     }
 
-    // Fetch previous persistent chat history
     fetchChatHistory(selectedTrip.id);
 
-    // Connect to /chat namespace
     const socket = io('/chat');
     socketRef.current = socket;
 
@@ -295,7 +401,6 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
     const handleIncomingMsg = (msg) => {
       setChatMessages((prev) => {
-        // De-duplicate incoming messages
         if (prev.some((m) => m.id === msg.id)) {
           return prev;
         }
@@ -314,82 +419,134 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     };
   }, [selectedTrip, token]);
 
-  // Auto-scroll chat history viewport
+  // Auto-scroll chat history
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages]);
 
-  // Swap Locations function
+  // Swap Locations function (updates both textual display and coordinate parameters)
   const handleSwapLocations = () => {
     if (activeSearchTab === 'find') {
-      const temp = pickupLoc;
+      const tempLoc = pickupLoc;
+      const tempCoords = pickupCoords;
       setPickupLoc(destLoc);
-      setDestLoc(temp);
+      setPickupCoords(destCoords);
+      setDestLoc(tempLoc);
+      setDestCoords(tempCoords);
     } else {
-      const temp = offerPickup;
+      const tempLoc = offerPickup;
+      const tempCoords = offerPickupCoords;
       setOfferPickup(offerDest);
-      setOfferDest(temp);
+      setOfferPickupCoords(offerDestCoords);
+      setOfferDest(tempLoc);
+      setOfferDestCoords(tempCoords);
     }
   };
 
-  // Submit Find Ride
-  const handleFindSubmit = (e) => {
+  // Submit Find Ride (requires explicit selected Nominatim suggestions & phone validation)
+  // Submit Find Ride (requires explicit selected Nominatim suggestions & phone verification)
+  const handleFindSubmit = async (e) => {
     e.preventDefault();
-    if (!pickupLoc.trim() || !destLoc.trim() || !rideDate || !rideTime || !numSeats) {
+    if (!pickupLoc.trim() || !destLoc.trim() || !rideDate || !rideTime || !numSeats || !phoneNum.trim()) {
       alert('All fields are required.');
       return;
     }
+
+    if (!pickupCoords || pickupCoords.address !== pickupLoc) {
+      alert('Please select a valid pickup location from the suggestions dropdown list.');
+      return;
+    }
+    if (!destCoords || destCoords.address !== destLoc) {
+      alert('Please select a valid destination location from the suggestions dropdown list.');
+      return;
+    }
     
+    // Auto-update profile in database if changed
+    if (phoneNum.trim() !== user?.phone) {
+      try {
+        await updateProfile(user.name, user.photoUrl, phoneNum.trim());
+      } catch (err) {
+        console.error('Failed to auto-update profile phone number:', err);
+      }
+    }
+
     onNavigate('route-confirmation', {
       type: 'find',
-      pickupLocation: pickupLoc,
-      destination: destLoc,
+      pickupLocation: pickupCoords.address,
+      pickupLat: pickupCoords.lat,
+      pickupLng: pickupCoords.lng,
+      destination: destCoords.address,
+      destLat: destCoords.lat,
+      destLng: destCoords.lng,
       date: rideDate,
       time: rideTime,
-      seats: numSeats,
-      isRecurring
+      seats: numSeats
     });
   };
 
-  // Submit Offer Ride
-  const handleOfferSubmit = (e) => {
+  // Submit Offer Ride (requires explicit selected Nominatim suggestions & phone verification)
+  const handleOfferSubmit = async (e) => {
     e.preventDefault();
     
-    // Validate that a vehicle exists only when publishing a ride
     if (userVehicles.length === 0) {
       alert('You must register a vehicle first before offering a ride.');
       setCurrentHeaderTab('vehicle');
       return;
     }
 
-    if (!offerPickup.trim() || !offerDest.trim() || !offerDateTime || !offerSeats || !offerFare || !selectedVehicle) {
+    if (!offerPickup.trim() || !offerDest.trim() || !offerDateTime || !offerSeats || !selectedVehicle || !phoneNum.trim()) {
       alert('All fields are required.');
       return;
     }
 
-    const selectedCar = userVehicles.find(v => v.id === selectedVehicle);
+    if (!offerPickupCoords || offerPickupCoords.address !== offerPickup) {
+      alert('Please select a valid pickup location from the suggestions dropdown list.');
+      return;
+    }
+    if (!offerDestCoords || offerDestCoords.address !== offerDest) {
+      alert('Please select a valid destination location from the suggestions dropdown list.');
+      return;
+    }
 
+    // Auto-update profile in database if changed
+    if (phoneNum.trim() !== user?.phone) {
+      try {
+        await updateProfile(user.name, user.photoUrl, phoneNum.trim());
+      } catch (err) {
+        console.error('Failed to auto-update profile phone number:', err);
+      }
+    }
+
+    const selectedCar = userVehicles.find(v => v.id === selectedVehicle);
     onNavigate('route-confirmation', {
       type: 'offer',
-      pickupLocation: offerPickup,
-      destination: offerDest,
+      pickupLocation: offerPickupCoords.address,
+      pickupLat: offerPickupCoords.lat,
+      pickupLng: offerPickupCoords.lng,
+      destination: offerDestCoords.address,
+      destLat: offerDestCoords.lat,
+      destLng: offerDestCoords.lng,
       dateTime: offerDateTime,
       seats: offerSeats,
-      fare: offerFare,
       vehicleId: selectedVehicle,
       vehicle: selectedCar ? `${selectedCar.model} (${selectedCar.registrationNumber})` : 'Registered Vehicle'
     });
   };
 
-  // Add Vehicle Submit
+  // Add Vehicle Submit (upper-cased registration code checks)
   const handleAddVehicle = async (e) => {
     e.preventDefault();
+    setVehicleSuccess('');
+    setVehicleError('');
+
     if (!newModel.trim() || !newReg.trim() || !newCapacity) {
-      alert('All fields are required');
+      setVehicleError('All fields are required.');
       return;
     }
+
+    const normalizedReg = newReg.trim().toUpperCase();
 
     try {
       const res = await fetch('/api/vehicles', {
@@ -400,7 +557,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
         },
         body: JSON.stringify({
           model: newModel,
-          registrationNumber: newReg,
+          registrationNumber: normalizedReg,
           seatingCapacity: parseInt(newCapacity, 10),
           status: newActive ? 'active' : 'inactive'
         })
@@ -418,9 +575,8 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       setNewActive(true);
       
       await fetchVehicles();
-      setTimeout(() => setVehicleSuccess(''), 2000);
     } catch (err) {
-      alert(err.message);
+      setVehicleError(err.message);
     }
   };
 
@@ -463,19 +619,16 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
   // ── Wallet and Payment Operations ──────────────────────────────────────────
 
-  // Triggered on clicking "Pay Now" on the Review screen
   const handleStartPaymentFlow = (trip) => {
     setSelectedTrip(trip);
     setActivePaymentMode('select');
     setPaymentMethod('wallet');
   };
 
-  // Confirms the payment based on selected method
   const handleProceedPayment = async () => {
     if (!selectedTrip) return;
 
     if (paymentMethod === 'wallet') {
-      // Wallet Payment Mode
       if (walletBalance < selectedTrip.fare) {
         alert('Insufficient wallet balance. Please select another method or recharge your wallet.');
         return;
@@ -507,7 +660,6 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
         setIsLoadingData(false);
       }
     } else if (paymentMethod === 'cash') {
-      // Cash payment
       setIsLoadingData(true);
       try {
         const res = await fetch('/api/payments/verify', {
@@ -540,7 +692,6 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
         setIsLoadingData(false);
       }
     } else {
-      // Card / UPI Razorpay Payment integration
       setIsLoadingData(true);
       try {
         const res = await fetch('/api/payments/create-order', {
@@ -555,11 +706,9 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
         if (!res.ok) throw new Error(data.message || 'Failed to create payment order.');
 
         if (data.isMock) {
-          // Open simulated Razorpay popup input card/upi panels
           setRazorpayOrder(data);
           setActivePaymentMode('gateway');
         } else {
-          // Real Razorpay Checkout integration
           const options = {
             key: data.key,
             amount: data.amount,
@@ -616,7 +765,6 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     }
   };
 
-  // Submits simulated Razorpay transaction verification
   const handleSimulatedPaymentSubmit = async (e) => {
     e.preventDefault();
     if (!razorpayOrder) return;
@@ -670,7 +818,6 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     }
   };
 
-  // Submits Wallet Recharge
   const handleRechargeSubmit = async (e) => {
     e.preventDefault();
     const amountVal = parseFloat(rechargeAmt);
@@ -704,116 +851,76 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     }
   };
 
-  const formatRideDate = (datetimeStr) => {
-    if (!datetimeStr) return '';
-    try {
-      const date = new Date(datetimeStr);
-      const hours = date.getHours().toString().padStart(2, '0');
-      const minutes = date.getMinutes().toString().padStart(2, '0');
-      const day = date.getDate();
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const month = monthNames[date.getMonth()];
-      const year = date.getFullYear().toString().substring(2);
-      
-      return `${hours}:${minutes} ${day}/${month}/${year}`;
-    } catch {
-      return datetimeStr;
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    if (!typedMessage.trim() || !socketRef.current || !selectedTrip) return;
+
+    socketRef.current.emit('message:send', {
+      tripId: selectedTrip.id,
+      senderId: user.id,
+      text: typedMessage.trim()
+    });
+
+    setTypedMessage('');
+  };
+
+  const focusChatInput = () => {
+    if (chatInputRef.current) {
+      chatInputRef.current.focus();
+      chatInputRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
-  // Helper to determine status badge styling
-  const getStatusBadge = (status) => {
-    let bg = 'rgba(107, 114, 128, 0.15)';
-    let color = '#6b7280';
-    let text = status;
+  // Reusable Premium Loading Skeletons (Requirement 3)
+  const SkeletonCard = () => (
+    <div style={{
+      height: '92px',
+      backgroundColor: 'var(--bg-input)',
+      border: '1px solid var(--border-color)',
+      borderRadius: '12px',
+      padding: '20px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      opacity: 0.5,
+      animation: 'pulse 1.8s infinite'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ width: '42px', height: '42px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.06)' }}></div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ width: '130px', height: '12px', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: '4px' }}></div>
+          <div style={{ width: '190px', height: '9px', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: '4px' }}></div>
+        </div>
+      </div>
+      <div style={{ width: '50px', height: '16px', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: '4px' }}></div>
+    </div>
+  );
 
-    switch (status) {
-      case 'booked':
-        bg = 'rgba(59, 130, 246, 0.15)';
-        color = '#3b82f6';
-        text = 'Booked';
-        break;
-      case 'started':
-        bg = 'rgba(249, 115, 22, 0.15)';
-        color = '#f97316';
-        text = 'Started';
-        break;
-      case 'in_progress':
-        bg = 'rgba(6, 182, 212, 0.15)';
-        color = '#06b6d4';
-        text = 'In Progress';
-        break;
-      case 'completed':
-        bg = 'rgba(16, 185, 129, 0.15)';
-        color = '#10b981';
-        text = 'Completed';
-        break;
-      case 'payment_pending':
-        bg = 'rgba(239, 68, 68, 0.15)';
-        color = '#ef4444';
-        text = 'Payment Pending';
-        break;
-      case 'payment_completed':
-        bg = 'rgba(16, 185, 129, 0.15)';
-        color = '#10b981';
-        text = 'Payment Completed';
-        break;
-    }
-
-    return (
-      <span style={{ 
-        fontSize: '11px', 
-        fontWeight: '600', 
-        padding: '3px 8px', 
-        borderRadius: '4px',
-        backgroundColor: bg,
-        color: color,
-        textTransform: 'uppercase',
-        letterSpacing: '0.5px'
-      }}>
-        {text}
-      </span>
-    );
+  // Suggestions Dropdown Styling
+  const suggestionsDropdownStyle = {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    backgroundColor: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: '8px',
+    boxShadow: '0 8px 16px rgba(0,0,0,0.25)',
+    margin: '4px 0 0 0',
+    padding: '6px 0',
+    listStyle: 'none',
+    maxHeight: '200px',
+    overflowY: 'auto'
   };
 
-  const formatTransactionType = (type) => {
-    if (type === 'recharge') return 'Wallet Recharge';
-    if (type === 'payment') return 'Ride Payment';
-    if (type === 'refund') return 'Refunded Earning';
-    return type;
-  };
-
-  // Helper to determine sidebar text rotation label
-  const getSidebarLabel = () => {
-    if (currentHeaderTab === 'trips' && selectedTrip) {
-      if (activePaymentMode === 'select' || activePaymentMode === 'gateway') {
-        return 'Payment';
-      }
-      if (activePaymentMode === 'success') {
-        return 'Success';
-      }
-      if (selectedTrip.status === 'payment_pending') {
-        return 'Trip Finish';
-      }
-      return 'Trip Detail';
-    }
-    
-    switch (currentHeaderTab) {
-      case 'trips':
-        return 'My Trips';
-      case 'vehicle':
-        return 'My Vehicle';
-      case 'history':
-        return 'History';
-      case 'wallet':
-        return 'Wallet';
-      case 'setting':
-        return 'Setting';
-      case 'report':
-        return 'Report';
-      default:
-        return 'Carpooling';
-    }
+  const suggestionItemStyle = {
+    padding: '8px 12px',
+    fontSize: '12px',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    borderBottom: '1px solid rgba(255,255,255,0.03)',
+    textAlign: 'left'
   };
 
   return (
@@ -859,7 +966,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
               {activeSearchTab === 'find' && (
                 <form onSubmit={handleFindSubmit} className="auth-form">
                   <div className="locations-container">
-                    <div className="form-group">
+                    <div className="form-group" style={{ position: 'relative' }}>
                       <label className="form-label">Pickup Location</label>
                       <div className="input-icon-wrapper">
                         <div className="input-icon-left">
@@ -868,12 +975,33 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                         <input
                           type="text"
                           className="input-field"
-                          placeholder="Pick up location"
+                          placeholder="Search pickup location..."
                           value={pickupLoc}
-                          onChange={(e) => setPickupLoc(e.target.value)}
+                          onChange={(e) => handleLocationInputChange(e.target.value, 'find_pickup', setPickupLoc, setPickupSuggestions)}
                           required
                         />
                       </div>
+                      
+                      {/* Suggestions list dropdown menu */}
+                      {pickupSuggestions.length > 0 && (
+                        <ul style={suggestionsDropdownStyle}>
+                          {pickupSuggestions.map((suggestion, idx) => (
+                            <li 
+                              key={idx} 
+                              style={suggestionItemStyle}
+                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                              onClick={() => {
+                                setPickupLoc(suggestion.address);
+                                setPickupCoords(suggestion);
+                                setPickupSuggestions([]);
+                              }}
+                            >
+                              {suggestion.address}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
 
                     <div className="swap-btn-container">
@@ -887,7 +1015,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                       </button>
                     </div>
 
-                    <div className="form-group">
+                    <div className="form-group" style={{ position: 'relative' }}>
                       <label className="form-label">Destination Location</label>
                       <div className="input-icon-wrapper">
                         <div className="input-icon-left">
@@ -896,12 +1024,33 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                         <input
                           type="text"
                           className="input-field"
-                          placeholder="Enter Drop location"
+                          placeholder="Search destination location..."
                           value={destLoc}
-                          onChange={(e) => setDestLoc(e.target.value)}
+                          onChange={(e) => handleLocationInputChange(e.target.value, 'find_dest', setDestLoc, setDestSuggestions)}
                           required
                         />
                       </div>
+
+                      {/* Suggestions list dropdown menu */}
+                      {destSuggestions.length > 0 && (
+                        <ul style={suggestionsDropdownStyle}>
+                          {destSuggestions.map((suggestion, idx) => (
+                            <li 
+                              key={idx} 
+                              style={suggestionItemStyle}
+                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                              onClick={() => {
+                                setDestLoc(suggestion.address);
+                                setDestCoords(suggestion);
+                                setDestSuggestions([]);
+                              }}
+                            >
+                              {suggestion.address}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   </div>
 
@@ -961,19 +1110,20 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                   </div>
 
                   <div className="form-group">
-                    <label className="toggle-wrapper">
+                    <label className="form-label">Phone Number</label>
+                    <div className="input-icon-wrapper">
+                      <div className="input-icon-left">
+                        <Phone size={18} style={{ transform: 'rotate(90deg)' }} />
+                      </div>
                       <input
-                        type="checkbox"
-                        className="toggle-input"
-                        checked={isRecurring}
-                        onChange={(e) => setIsRecurring(e.target.checked)}
+                        type="tel"
+                        className="input-field"
+                        placeholder="Enter your phone number..."
+                        value={phoneNum}
+                        onChange={(e) => setPhoneNum(e.target.value)}
+                        required
                       />
-                      <div className="toggle-switch"></div>
-                      <span className="toggle-label">
-                        <Repeat size={16} />
-                        <span>Recurring Ride - Mo,Tu,We,Th,FR</span>
-                      </span>
-                    </label>
+                    </div>
                   </div>
 
                   <button type="submit" className="btn btn-primary">
@@ -983,11 +1133,11 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                 </form>
               )}
 
-              {/* Offer a Ride Form */}
+              {/* Offer a Ride Form (Recurring rides checkbox and Fare input removed completely) */}
               {activeSearchTab === 'offer' && (
                 <form onSubmit={handleOfferSubmit} className="auth-form">
                   <div className="locations-container">
-                    <div className="form-group">
+                    <div className="form-group" style={{ position: 'relative' }}>
                       <label className="form-label">Pickup Location</label>
                       <div className="input-icon-wrapper">
                         <div className="input-icon-left">
@@ -996,12 +1146,33 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                         <input
                           type="text"
                           className="input-field"
-                          placeholder="Enter pick up point"
+                          placeholder="Search pickup location..."
                           value={offerPickup}
-                          onChange={(e) => setOfferPickup(e.target.value)}
+                          onChange={(e) => handleLocationInputChange(e.target.value, 'offer_pickup', setOfferPickup, setOfferPickupSuggestions)}
                           required
                         />
                       </div>
+
+                      {/* Suggestions list dropdown menu */}
+                      {offerPickupSuggestions.length > 0 && (
+                        <ul style={suggestionsDropdownStyle}>
+                          {offerPickupSuggestions.map((suggestion, idx) => (
+                            <li 
+                              key={idx} 
+                              style={suggestionItemStyle}
+                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                              onClick={() => {
+                                setOfferPickup(suggestion.address);
+                                setOfferPickupCoords(suggestion);
+                                setOfferPickupSuggestions([]);
+                              }}
+                            >
+                              {suggestion.address}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
 
                     <div className="swap-btn-container">
@@ -1015,7 +1186,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                       </button>
                     </div>
 
-                    <div className="form-group">
+                    <div className="form-group" style={{ position: 'relative' }}>
                       <label className="form-label">Destination Location</label>
                       <div className="input-icon-wrapper">
                         <div className="input-icon-left">
@@ -1024,12 +1195,33 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                         <input
                           type="text"
                           className="input-field"
-                          placeholder="Enter drop point"
+                          placeholder="Search destination location..."
                           value={offerDest}
-                          onChange={(e) => setOfferDest(e.target.value)}
+                          onChange={(e) => handleLocationInputChange(e.target.value, 'offer_dest', setOfferDest, setOfferDestSuggestions)}
                           required
                         />
                       </div>
+
+                      {/* Suggestions list dropdown menu */}
+                      {offerDestSuggestions.length > 0 && (
+                        <ul style={suggestionsDropdownStyle}>
+                          {offerDestSuggestions.map((suggestion, idx) => (
+                            <li 
+                              key={idx} 
+                              style={suggestionItemStyle}
+                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                              onClick={() => {
+                                setOfferDest(suggestion.address);
+                                setOfferDestCoords(suggestion);
+                                setOfferDestSuggestions([]);
+                              }}
+                            >
+                              {suggestion.address}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   </div>
 
@@ -1072,51 +1264,48 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                     </div>
                   </div>
 
-                  <div className="form-row-2col">
-                    <div className="form-group">
-                      <label className="form-label">Fare per Seat ($)</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <DollarSign size={18} />
-                        </div>
-                        <input
-                          type="number"
-                          min="1"
-                          className="input-field"
-                          placeholder="Price per seat"
-                          value={offerFare}
-                          onChange={(e) => setOfferFare(e.target.value)}
-                          required
-                        />
+                  <div className="form-group">
+                    <label className="form-label">Vehicle</label>
+                    <div className="input-icon-wrapper seat-select-wrapper">
+                      <div className="input-icon-left">
+                        <Car size={18} />
                       </div>
+                      <select
+                        className="input-field seat-select"
+                        value={selectedVehicle}
+                        onChange={(e) => setSelectedVehicle(e.target.value)}
+                        required
+                      >
+                        {userVehicles.length === 0 ? (
+                          <option value="">-- No Vehicles Registered --</option>
+                        ) : (
+                          userVehicles
+                            .filter(v => v.status === 'active')
+                            .map((vehicle) => (
+                              <option key={vehicle.id} value={vehicle.id}>
+                                {vehicle.model} ({vehicle.registrationNumber})
+                              </option>
+                            ))
+                        )}
+                      </select>
+                      <ChevronDown size={18} className="select-arrow-icon" />
                     </div>
+                  </div>
 
-                    <div className="form-group">
-                      <label className="form-label">Vehicle</label>
-                      <div className="input-icon-wrapper seat-select-wrapper">
-                        <div className="input-icon-left">
-                          <Car size={18} />
-                        </div>
-                        <select
-                          className="input-field seat-select"
-                          value={selectedVehicle}
-                          onChange={(e) => setSelectedVehicle(e.target.value)}
-                          required
-                        >
-                          {userVehicles.length === 0 ? (
-                            <option value="">-- No Vehicles Registered --</option>
-                          ) : (
-                            userVehicles
-                              .filter(v => v.status === 'active')
-                              .map((vehicle) => (
-                                <option key={vehicle.id} value={vehicle.id}>
-                                  {vehicle.model} ({vehicle.registrationNumber})
-                                </option>
-                              ))
-                          )}
-                        </select>
-                        <ChevronDown size={18} className="select-arrow-icon" />
+                  <div className="form-group">
+                    <label className="form-label">Phone Number</label>
+                    <div className="input-icon-wrapper">
+                      <div className="input-icon-left">
+                        <Phone size={18} style={{ transform: 'rotate(90deg)' }} />
                       </div>
+                      <input
+                        type="tel"
+                        className="input-field"
+                        placeholder="Enter your phone number..."
+                        value={phoneNum}
+                        onChange={(e) => setPhoneNum(e.target.value)}
+                        required
+                      />
                     </div>
                   </div>
 
@@ -1418,7 +1607,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                         Fare Summary
                       </h3>
 
-                      <div style={{ display: 'flex', justifycontent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
                         <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Ride Charges</span>
                         <span style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600' }}>₹ {selectedTrip.fare}</span>
                       </div>
@@ -1656,14 +1845,6 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                                       <span>Chat</span>
                                     </button>
                                     <button 
-                                      className="btn btn-secondary" 
-                                      style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}
-                                      onClick={() => setCallingUser(selectedTrip.driver?.name || 'Carpool Driver')}
-                                    >
-                                      <Phone size={16} />
-                                      <span>Call</span>
-                                    </button>
-                                    <button 
                                       className="btn btn-primary" 
                                       style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}
                                       onClick={() => onNavigate('track-ride', {
@@ -1682,19 +1863,8 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                               </div>
                             )}
 
-                            {/* Driver Calling button */}
-                            {selectedTrip.driverId === user?.id && selectedTrip.passengers?.length > 0 && (
-                              <button 
-                                className="btn btn-secondary" 
-                                style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}
-                                onClick={() => setCallingUser(selectedTrip.passengers[0].user?.name || 'Passenger')}
-                              >
-                                <Phone size={16} />
-                                <span>Call Passenger</span>
-                              </button>
-                            )}
 
-                            {/* Fare details */}
+                            {/* Fare details (Formatted with Rupee symbol) */}
                             <div style={{ textAlign: 'right' }}>
                               <span style={{ fontSize: '24px', fontWeight: '800', color: 'var(--text-primary)' }}>
                                 ₹ {selectedTrip.fare}
@@ -1814,13 +1984,15 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                       </div>
                     </>
                   ) : (
-                    /* Scenario 2: Active Trips List */
+                    /* Scenario 2: Active Trips List (Loading skeletons integrated) */
                     <>
                       <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '16px' }}>My Active Trips</h2>
 
                       {isLoadingData && activeTrips.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '40px' }}>
-                          <Loader2 className="animate-spin" size={28} style={{ margin: '0 auto' }} />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          <SkeletonCard />
+                          <SkeletonCard />
+                          <SkeletonCard />
                         </div>
                       ) : activeTrips.length === 0 ? (
                         <div style={{ 
@@ -1912,7 +2084,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
             </div>
           )}
 
-          {/* Sub-view: MY VEHICLE */}
+          {/* Sub-view: MY VEHICLE (Normalized input validations and inline error alert blocks) */}
           {currentHeaderTab === 'vehicle' && (
             <div className="dashboard-container" style={{ maxWidth: '800px' }}>
               
@@ -1928,7 +2100,10 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                   <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>Registered Vehicles</h2>
                   
                   {isLoadingData && userVehicles.length === 0 ? (
-                    <Loader2 className="animate-spin" size={24} style={{ margin: '20px auto' }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <SkeletonCard />
+                      <SkeletonCard />
+                    </div>
                   ) : userVehicles.length === 0 ? (
                     <div style={{ 
                       padding: '24px', 
@@ -1963,7 +2138,6 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                             </div>
                           </div>
                           
-                          {/* Toggle switch for Active status */}
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
                             <label className="toggle-wrapper" style={{ gap: '6px' }}>
                               <input
@@ -1984,7 +2158,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                   )}
                 </div>
 
-                {/* Add new vehicle form column */}
+                {/* Add new vehicle form column (uppercase normalization and explicit error alerts) */}
                 <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '24px' }}>
                   <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '16px' }}>Register a Vehicle</h2>
                   
@@ -1992,6 +2166,12 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                     <div className="feedback-alert feedback-success" style={{ marginBottom: '16px' }}>
                       <Check size={16} />
                       <span>{vehicleSuccess}</span>
+                    </div>
+                  )}
+
+                  {vehicleError && (
+                    <div className="feedback-alert feedback-error" style={{ marginBottom: '16px' }}>
+                      <span>{vehicleError}</span>
                     </div>
                   )}
 
@@ -2014,7 +2194,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                       <input 
                         type="text" 
                         className="input-field" 
-                        style={{ paddingLeft: '16px' }}
+                        style={{ paddingLeft: '16px', textTransform: 'uppercase' }}
                         placeholder="e.g. GJ01AB1234"
                         value={newReg}
                         onChange={(e) => setNewReg(e.target.value)}
@@ -2062,7 +2242,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
             </div>
           )}
 
-          {/* Sub-view: RIDE HISTORY (Screen 16 Wireframe Reused Card Matching) */}
+          {/* Sub-view: RIDE HISTORY */}
           {currentHeaderTab === 'history' && (
             <div className="dashboard-container" style={{ maxWidth: '800px' }}>
               <button className="back-header" onClick={() => setCurrentHeaderTab('dashboard')}>
@@ -2073,8 +2253,9 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
               <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '16px' }}>Ride History</h2>
               
               {isLoadingData && historyTrips.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px' }}>
-                  <Loader2 className="animate-spin" size={28} style={{ margin: '0 auto' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <SkeletonCard />
+                  <SkeletonCard />
                 </div>
               ) : historyTrips.length === 0 ? (
                 <div style={{ 
@@ -2247,7 +2428,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                     <div className="form-group">
                       <label className="form-label">Amount (₹)</label>
                       <div className="input-icon-wrapper">
-                        <div className="input-icon-left" style={{ fontWeight: '700', color: 'var(--text-muted)' }}>
+                        <div className="input-icon-left" style={{ fontWeight: '700', color: 'var(--text-muted)', fontSize: '14px' }}>
                           ₹
                         </div>
                         <input 
@@ -2336,7 +2517,6 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                   gap: '16px',
                   textAlign: 'center'
                 }}>
-                  {/* CSS Drawn simulated QR Code */}
                   <div style={{ 
                     width: '120px', 
                     height: '120px', 
@@ -2440,7 +2620,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
             </div>
           )}
 
-          {/* Sub-view: REPORTS & ANALYTICS (Screen 17 Wireframe Matching) */}
+          {/* Sub-view: REPORTS & ANALYTICS */}
           {currentHeaderTab === 'report' && (
             <div className="dashboard-container" style={{ maxWidth: '1000px' }}>
               
@@ -2652,8 +2832,9 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
                 </>
               ) : (
-                <div style={{ textAlign: 'center', padding: '40px' }}>
-                  <Loader2 className="animate-spin" size={28} style={{ margin: '0 auto' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <SkeletonCard />
+                  <SkeletonCard />
                 </div>
               )}
 
@@ -2678,84 +2859,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
         </main>
       </div>
 
-      {/* Simulated Calling Modal overlay */}
-      {callingUser && (
-        <div style={{ 
-          position: 'fixed', 
-          top: 0, 
-          left: 0, 
-          width: '100%', 
-          height: '100%', 
-          backgroundColor: 'rgba(5, 8, 15, 0.9)', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center', 
-          zIndex: 9999,
-          backdropFilter: 'blur(8px)'
-        }}>
-          <div style={{ 
-            backgroundColor: 'var(--bg-input)', 
-            border: '1px solid var(--border-color)', 
-            borderRadius: '24px', 
-            width: '320px', 
-            padding: '40px 24px', 
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '24px',
-            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)'
-          }}>
-            {/* Pulsing avatar */}
-            <div className="calling-avatar-ring">
-              <div style={{ 
-                width: '80px', 
-                height: '80px', 
-                borderRadius: '50%', 
-                backgroundColor: 'rgba(16, 185, 129, 0.1)', 
-                border: '2px solid var(--color-brand)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--color-brand)'
-              }}>
-                <Users size={36} />
-              </div>
-            </div>
 
-            <div>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: '700' }}>
-                Calling...
-              </span>
-              <h3 style={{ fontSize: '20px', fontWeight: '600', color: 'var(--text-primary)', margin: '8px 0 0 0' }}>
-                {callingUser}
-              </h3>
-            </div>
-
-            {/* End Call red button */}
-            <button 
-              className="btn" 
-              onClick={() => setCallingUser(null)}
-              style={{ 
-                width: '56px', 
-                height: '56px', 
-                borderRadius: '50%', 
-                backgroundColor: '#ef4444', 
-                color: '#fff', 
-                padding: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: 'none',
-                cursor: 'pointer',
-                boxShadow: '0 8px 24px rgba(239, 68, 68, 0.4)'
-              }}
-            >
-              <PhoneOff size={24} />
-            </button>
-          </div>
-        </div>
-      )}
 
     </div>
   );

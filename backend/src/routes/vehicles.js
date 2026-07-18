@@ -37,11 +37,13 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ message: 'model, registrationNumber, and seatingCapacity are required.' });
   }
 
+  const normalizedReg = registrationNumber.trim().toUpperCase();
+
   try {
-    // Check registration number uniqueness
+    // Check registration number uniqueness case-insensitively
     const existing = await withRetry(() =>
-      prisma.vehicle.findUnique({
-        where: { registrationNumber }
+      prisma.vehicle.findFirst({
+        where: { registrationNumber: { equals: normalizedReg, mode: 'insensitive' } }
       })
     );
 
@@ -56,7 +58,7 @@ router.post('/', requireAuth, async (req, res) => {
         data: {
           userId: req.user.id,
           model,
-          registrationNumber,
+          registrationNumber: normalizedReg,
           seatingCapacity: capacity,
           status: status || 'active'
         }
