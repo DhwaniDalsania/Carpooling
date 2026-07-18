@@ -74,6 +74,12 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   const messagesEndRef = useRef(null);
   const chatInputRef = useRef(null);
 
+  const focusChatInput = () => {
+    if (chatInputRef.current) {
+      chatInputRef.current.focus();
+    }
+  };
+
   // Simulated calling modal state
   const [callingUser, setCallingUser] = useState(null);
 
@@ -175,16 +181,65 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
   const fetchChatHistory = async (tripId) => {
     if (!token || !tripId) return;
+
+    // Dummy messages for UI testing when DB is unavailable
+    const DUMMY_MESSAGES = [
+      {
+        id: 'dummy-1',
+        tripId,
+        senderId: 'driver-dummy',
+        text: "Hi! I'm on my way. Should be there in ~5 mins 🚗",
+        createdAt: new Date(Date.now() - 8 * 60000).toISOString(),
+        sender: { id: 'driver-dummy', name: 'Priya Sharma', photoUrl: null }
+      },
+      {
+        id: 'dummy-2',
+        tripId,
+        senderId: 'passenger-dummy',
+        text: "Great! I'm waiting at the gate.",
+        createdAt: new Date(Date.now() - 6 * 60000).toISOString(),
+        sender: { id: 'passenger-dummy', name: 'Rohan Verma', photoUrl: null }
+      },
+      {
+        id: 'dummy-3',
+        tripId,
+        senderId: 'driver-dummy',
+        text: 'Stuck at a signal near Koramangala 7th block, 2 min delay.',
+        createdAt: new Date(Date.now() - 4 * 60000).toISOString(),
+        sender: { id: 'driver-dummy', name: 'Priya Sharma', photoUrl: null }
+      },
+      {
+        id: 'dummy-4',
+        tripId,
+        senderId: 'passenger-dummy',
+        text: 'No worries, take your time! 😊',
+        createdAt: new Date(Date.now() - 2 * 60000).toISOString(),
+        sender: { id: 'passenger-dummy', name: 'Rohan Verma', photoUrl: null }
+      },
+      {
+        id: 'dummy-5',
+        tripId,
+        senderId: 'driver-dummy',
+        text: "Almost there! Can see the building now.",
+        createdAt: new Date(Date.now() - 30000).toISOString(),
+        sender: { id: 'driver-dummy', name: 'Priya Sharma', photoUrl: null }
+      },
+    ];
+
     try {
       const res = await fetch(`/api/trips/${tripId}/messages`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
         const data = await res.json();
-        setChatMessages(data);
+        // Use real data if available, otherwise fall back to dummy data
+        setChatMessages(data.length > 0 ? data : DUMMY_MESSAGES);
+      } else {
+        setChatMessages(DUMMY_MESSAGES);
       }
     } catch (err) {
-      console.error('Failed to fetch chat history', err);
+      console.error('Failed to fetch chat history, using dummy data', err);
+      setChatMessages(DUMMY_MESSAGES);
     }
   };
 

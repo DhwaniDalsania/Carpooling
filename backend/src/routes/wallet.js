@@ -8,10 +8,10 @@ const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/wallet/balance
+// GET /api/wallet/mine  (alias: GET /api/wallet/balance)
 // Fetch authenticated user's wallet balance and transaction logs
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/balance', requireAuth, async (req, res) => {
+router.get(['/mine', '/balance'], requireAuth, async (req, res) => {
   try {
     let wallet = await withRetry(() => prisma.wallet.findUnique({ where: { userId: req.user.id } }));
     
@@ -50,15 +50,14 @@ router.post('/recharge', requireAuth, async (req, res) => {
   }
 
   try {
-    const updatedWallet = await withRetry(() =>
-      prisma.$transaction(async (tx) => {
-        const wallet = await tx.wallet.upsert({
+    const [updatedWallet] = await withRetry(() =>
+      prisma.$transaction([
+        prisma.wallet.upsert({
           where: { userId: req.user.id },
           update: { balance: { increment: amountVal } },
           create: { userId: req.user.id, balance: amountVal }
-        });
-
-        await tx.transaction.create({
+        }),
+        prisma.transaction.create({
           data: {
             userId: req.user.id,
             amount: amountVal,
@@ -66,10 +65,8 @@ router.post('/recharge', requireAuth, async (req, res) => {
             method: 'simulated',
             status: 'completed'
           }
-        });
-
-        return wallet;
-      })
+        })
+      ])
     );
 
     // Refresh context payload
@@ -124,22 +121,20 @@ router.post('/pay', requireAuth, async (req, res) => {
 
     // Deduct passenger, credit driver, record transactions (atomic transaction)
     await withRetry(() =>
-      prisma.$transaction(async (tx) => {
+      prisma.$transaction([
         // 1. Deduct passenger wallet
-        await tx.wallet.update({
+        prisma.wallet.update({
           where: { userId: req.user.id },
           data: { balance: { decrement: trip.fare } }
-        });
-
+        }),
         // 2. Credit driver wallet
-        await tx.wallet.upsert({
+        prisma.wallet.upsert({
           where: { userId: trip.driverId },
           update: { balance: { increment: trip.fare } },
           create: { userId: trip.driverId, balance: trip.fare }
-        });
-
+        }),
         // 3. Create passenger payment transaction log
-        await tx.transaction.create({
+        prisma.transaction.create({
           data: {
             userId: req.user.id,
             tripId: trip.id,
@@ -148,10 +143,9 @@ router.post('/pay', requireAuth, async (req, res) => {
             method: 'wallet',
             status: 'completed'
           }
-        });
-
+        }),
         // 4. Create driver earning transaction log
-        await tx.transaction.create({
+        prisma.transaction.create({
           data: {
             userId: trip.driverId,
             tripId: trip.id,
@@ -160,14 +154,13 @@ router.post('/pay', requireAuth, async (req, res) => {
             method: 'wallet',
             status: 'completed'
           }
-        });
-
+        }),
         // 5. Set trip status to payment_completed
-        await tx.trip.update({
+        prisma.trip.update({
           where: { id: trip.id },
           data: { status: 'payment_completed' }
-        });
-      })
+        })
+      ])
     );
 
     return res.status(200).json({ message: 'Fare payment completed successfully via Wallet.' });

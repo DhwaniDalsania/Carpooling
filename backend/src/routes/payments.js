@@ -112,16 +112,16 @@ router.post('/verify', requireAuth, async (req, res) => {
     // Since payment is made via external Card/UPI, passenger wallet balance is untouched.
     // Driver gets credited the fare in their wallet.
     await withRetry(() =>
-      prisma.$transaction(async (tx) => {
+      prisma.$transaction([
         // 1. Credit driver wallet
-        await tx.wallet.upsert({
+        prisma.wallet.upsert({
           where: { userId: trip.driverId },
           update: { balance: { increment: trip.fare } },
           create: { userId: trip.driverId, balance: trip.fare }
-        });
+        }),
 
         // 2. Create passenger payment transaction log
-        await tx.transaction.create({
+        prisma.transaction.create({
           data: {
             userId: req.user.id,
             tripId: trip.id,
@@ -130,10 +130,10 @@ router.post('/verify', requireAuth, async (req, res) => {
             method: razorpay_order_id.startsWith('order_mock_') ? `simulated_${method}` : `razorpay_${method}`,
             status: 'completed'
           }
-        });
+        }),
 
         // 3. Create driver earning transaction log
-        await tx.transaction.create({
+        prisma.transaction.create({
           data: {
             userId: trip.driverId,
             tripId: trip.id,
@@ -142,20 +142,100 @@ router.post('/verify', requireAuth, async (req, res) => {
             method: razorpay_order_id.startsWith('order_mock_') ? `simulated_${method}` : `razorpay_${method}`,
             status: 'completed'
           }
-        });
+        }),
 
         // 4. Update trip status to payment_completed
-        await tx.trip.update({
+        prisma.trip.update({
           where: { id: trip.id },
           data: { status: 'payment_completed' }
-        });
-      })
+        })
+      ])
     );
 
     return res.status(200).json({ message: 'Payment verified and completed successfully.' });
   } catch (err) {
     console.error('[verifyPayment]', err);
     return res.status(500).json({ message: 'Failed to complete payment verification.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/payments/simulate
+// ⚠️  SIMULATED GATEWAY — No real money moves. For demo/testing only.
+// Marks the trip payment_completed after a 1.5s artificial delay,
+// credits the driver's wallet, and logs a Transaction for both parties.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/simulate', requireAuth, async (req, res) => {
+  const { tripId } = req.body;
+
+  if (!tripId) {
+    return res.status(400).json({ message: 'tripId is required.' });
+  }
+
+  try {
+    const trip = await withRetry(() =>
+      prisma.trip.findUnique({
+        where: { id: tripId },
+        include: { passengers: true }
+      })
+    );
+
+    if (!trip) {
+      return res.status(404).json({ message: 'Trip not found.' });
+    }
+
+    if (trip.status !== 'payment_pending') {
+      return res.status(400).json({ message: `Trip is not pending payment (status: ${trip.status}).` });
+    }
+
+    // Artificial gateway delay (1.5s) to simulate processing
+    await new Promise((r) => setTimeout(r, 1500));
+
+    await withRetry(() =>
+      prisma.$transaction([
+        // Credit driver wallet
+        prisma.wallet.upsert({
+          where: { userId: trip.driverId },
+          update: { balance: { increment: trip.fare } },
+          create: { userId: trip.driverId, balance: trip.fare }
+        }),
+
+        // Log passenger payment
+        prisma.transaction.create({
+          data: {
+            userId: req.user.id,
+            tripId: trip.id,
+            amount: trip.fare,
+            type: 'payment',
+            method: 'simulated',
+            status: 'completed'
+          }
+        }),
+
+        // Log driver earning
+        prisma.transaction.create({
+          data: {
+            userId: trip.driverId,
+            tripId: trip.id,
+            amount: trip.fare,
+            type: 'recharge',
+            method: 'simulated',
+            status: 'completed'
+          }
+        }),
+
+        // Mark trip as paid
+        prisma.trip.update({
+          where: { id: trip.id },
+          data: { status: 'payment_completed' }
+        })
+      ])
+    );
+
+    return res.status(200).json({ message: '✅ [SIMULATED] Payment completed successfully.' });
+  } catch (err) {
+    console.error('[simulatePayment]', err);
+    return res.status(500).json({ message: 'Failed to simulate payment.' });
   }
 });
 

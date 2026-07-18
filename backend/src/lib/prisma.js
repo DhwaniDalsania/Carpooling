@@ -24,7 +24,7 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
  * Neon auto-suspends compute; the first request after idle may fail.
  * Subsequent retries hit a warm compute and succeed.
  */
-async function withRetry(fn, retries = 3, delayMs = 2000) {
+async function withRetry(fn, retries = 5, delayMs = 3000) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       return await fn();
@@ -36,14 +36,17 @@ async function withRetry(fn, retries = 3, delayMs = 2000) {
         err.errorCode === 'P1002' ||
         err.message?.includes('connection pool') ||
         err.message?.includes('Timed out') ||
-        err.message?.includes('connect');
+        err.message?.includes('connect') ||
+        err.message?.includes("Can't reach") ||
+        err.message?.includes('ECONNREFUSED') ||
+        err.message?.includes('ETIMEDOUT');
 
       if (isConnErr && attempt < retries) {
         console.warn(`[prisma] Connection error (attempt ${attempt}/${retries}), retrying in ${delayMs}ms…`);
         await prisma.$disconnect().catch(() => {});
         await new Promise((r) => setTimeout(r, delayMs));
         await prisma.$connect().catch(() => {});
-        delayMs *= 2; // exponential backoff: 2s → 4s
+        delayMs = Math.min(delayMs * 1.5, 10000); // cap at 10s
       } else {
         throw err;
       }
