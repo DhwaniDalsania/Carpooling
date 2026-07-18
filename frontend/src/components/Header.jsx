@@ -14,6 +14,7 @@ export const Header = ({ onProfileClick, currentTab, setCurrentTab, showTabs }) 
     { id: 'history', label: 'Ride History' },
     { id: 'wallet',  label: 'Wallet' },
     { id: 'setting', label: 'Setting' },
+    { id: 'report',  label: 'Report' },
   ];
 
   // Close dropdown when clicking outside

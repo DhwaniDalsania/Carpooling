@@ -92,10 +92,9 @@ app.use('/api/bookings', require('./routes/bookings'));
 app.use('/api/trips', require('./routes/trips'));
 app.use('/api/vehicles', require('./routes/vehicles'));
 app.use('/api/routes', require('./routes/routes'));
-
-// Placeholder routers — to be implemented in subsequent tasks
-// app.use('/api/wallet',   require('./routes/wallet'));
-// app.use('/api/payments', require('./routes/payments'));
+app.use('/api/wallet', require('./routes/wallet'));
+app.use('/api/payments', require('./routes/payments'));
+app.use('/api/reports', require('./routes/reports'));
 // app.use('/api/reports',  require('./routes/reports'));
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
