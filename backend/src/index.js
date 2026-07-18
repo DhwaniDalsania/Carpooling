@@ -17,6 +17,8 @@ const io = new Server(server, {
 
 // /tracking namespace — GPS location broadcasts during a live trip
 const trackingNs = io.of('/tracking');
+app.set('trackingNs', trackingNs);
+
 trackingNs.on('connection', (socket) => {
   console.log('[/tracking] client connected:', socket.id);
 

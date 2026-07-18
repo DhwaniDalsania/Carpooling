@@ -4,6 +4,7 @@
 const express = require('express');
 const { prisma, withRetry } = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
+const { startSimulation, stopSimulation, activeLocations } = require('../lib/tripSimulator');
 
 const router = express.Router();
 
@@ -72,7 +73,10 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
   }
 
   try {
-    const trip = await withRetry(() => prisma.trip.findUnique({ where: { id } }));
+    const trip = await withRetry(() => prisma.trip.findUnique({ 
+      where: { id },
+      include: { ride: true }
+    }));
     
     if (!trip) {
       return res.status(404).json({ message: 'Trip not found.' });
@@ -100,10 +104,14 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
 
     if (status === 'started') {
       updateData.startedAt = new Date();
+      if (trip.ride?.routeGeoJson) {
+        startSimulation(id, trip.ride.routeGeoJson, req.app.get('trackingNs'));
+      }
     } else if (status === 'completed') {
       updateData.completedAt = new Date();
       // Auto-transition to payment_pending
       updateData.status = 'payment_pending';
+      stopSimulation(id);
     }
 
     const updatedTrip = await withRetry(() => prisma.trip.update({
@@ -141,6 +149,21 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[getTripMessages]', err);
     return res.status(500).json({ message: 'Failed to fetch trip messages.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/trips/:id/location
+// REST fallback to get the last known location from the simulator's activeLocations
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/:id/location', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const location = activeLocations.get(id);
+
+  if (location) {
+    return res.status(200).json(location);
+  } else {
+    return res.status(404).json({ message: 'Live location not available for this trip.' });
   }
 });
 
