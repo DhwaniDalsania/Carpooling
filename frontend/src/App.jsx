@@ -7,22 +7,26 @@ import Login from './components/Login';
 import SignUp from './components/SignUp';
 import Dashboard from './components/Dashboard';
 import ProfileModal from './components/ProfileModal';
-
-
-
+import RouteConfirmation from './components/RouteConfirmation';
+import AvailableRides from './components/AvailableRides';
 
 function MainAppContent() {
   const { user } = useAuth();
   const [screen, setScreen] = useState('splash');
+  const [routeState, setRouteState] = useState(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   // Automatically transition to the dashboard once authenticated.
   // Automatically redirect back to the login screen if the user logs out.
   useEffect(() => {
     if (user) {
-      setScreen('dashboard');
-    } else if (screen === 'dashboard') {
+      // Avoid resetting search/available-rides screens on user change if already in active flow
+      if (screen !== 'route-confirmation' && screen !== 'available-rides') {
+        setScreen('dashboard');
+      }
+    } else if (screen === 'dashboard' || screen === 'route-confirmation' || screen === 'available-rides') {
       setScreen('login');
+      setRouteState(null);
     }
   }, [user, screen]);
 
@@ -32,6 +36,11 @@ function MainAppContent() {
     } else {
       setScreen('login');
     }
+  };
+
+  const handleNavigate = (targetScreen, stateData) => {
+    setRouteState(stateData);
+    setScreen(targetScreen);
   };
 
   switch (screen) {
@@ -57,11 +66,49 @@ function MainAppContent() {
     case 'dashboard':
       return (
         <>
-          <Dashboard onProfileClick={() => setIsProfileOpen(true)} />
+          <Dashboard 
+            onProfileClick={() => setIsProfileOpen(true)} 
+            onNavigate={handleNavigate}
+            dashboardState={routeState}
+          />
           
           <ProfileModal 
             isOpen={isProfileOpen} 
             onClose={() => setIsProfileOpen(false)} 
+          />
+        </>
+      );
+
+    case 'route-confirmation':
+      return (
+        <>
+          <RouteConfirmation
+            routeState={routeState}
+            onBack={() => setScreen('dashboard')}
+            onProfileClick={() => setIsProfileOpen(true)}
+            onNavigate={handleNavigate}
+          />
+
+          <ProfileModal
+            isOpen={isProfileOpen}
+            onClose={() => setIsProfileOpen(false)}
+          />
+        </>
+      );
+
+    case 'available-rides':
+      return (
+        <>
+          <AvailableRides
+            routeState={routeState}
+            onBack={() => setScreen('route-confirmation')}
+            onProfileClick={() => setIsProfileOpen(true)}
+            onNavigate={handleNavigate}
+          />
+
+          <ProfileModal
+            isOpen={isProfileOpen}
+            onClose={() => setIsProfileOpen(false)}
           />
         </>
       );

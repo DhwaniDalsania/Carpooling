@@ -8,6 +8,7 @@ export const Header = ({ onProfileClick, currentTab, setCurrentTab, showTabs }) 
   const menuRef = useRef(null);
 
   const tabs = [
+    { id: 'dashboard', label: 'Dashboard' },
     { id: 'trips',   label: 'My Trips' },
     { id: 'vehicle', label: 'My Vehicle' },
     { id: 'history', label: 'Ride History' },

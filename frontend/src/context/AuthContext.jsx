@@ -2,6 +2,32 @@ import React, { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
 
+// Helper to safely parse API responses, log body/status, and handle empty payloads (Requirements 7, 8, 9)
+async function parseJsonResponse(response) {
+  const text = await response.text();
+  
+  // Log request URL, status code, and raw body to console to identify issues easily
+  console.log(`[API Response] URL: ${response.url} | Status: ${response.status} | Content-Type: ${response.headers.get('content-type')}`);
+  console.log(`[API Response Body]`, text ? (text.length > 500 ? text.substring(0, 500) + '...' : text) : '<empty>');
+
+  if (!text.trim()) {
+    if (!response.ok) {
+      throw new Error(`HTTP Error ${response.status}: Server returned an empty response.`);
+    }
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    if (!response.ok) {
+      // If server failed, throw the raw message or fall back to status text
+      throw new Error(text || `HTTP Error ${response.status}`);
+    }
+    throw new Error('Failed to parse server response as valid JSON.');
+  }
+}
+
 export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
@@ -17,7 +43,8 @@ export const AuthProvider = ({ children }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
-      const data = await response.json();
+      
+      const data = await parseJsonResponse(response);
       
       if (!response.ok) {
         throw new Error(data.message || 'Login failed');
@@ -43,7 +70,8 @@ export const AuthProvider = ({ children }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, organizationCode, phone, photo })
       });
-      const data = await response.json();
+      
+      const data = await parseJsonResponse(response);
 
       if (!response.ok) {
         throw new Error(data.message || 'Registration failed');
@@ -71,7 +99,8 @@ export const AuthProvider = ({ children }) => {
         },
         body: JSON.stringify({ email: user.email, name, photo })
       });
-      const data = await response.json();
+      
+      const data = await parseJsonResponse(response);
 
       if (!response.ok) {
         throw new Error(data.message || 'Profile update failed');
@@ -119,3 +148,4 @@ export const useAuth = () => {
   }
   return context;
 };
+export default AuthProvider;
