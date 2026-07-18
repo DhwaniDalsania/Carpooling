@@ -86,20 +86,21 @@ app.use(express.json({ limit: '5mb' })); // 5mb for base64 photoUrl uploads
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date() }));
 
+const { requireAuth, requireRole } = require('./middleware/auth');
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/user', require('./routes/user'));
-app.use('/api/rides', require('./routes/rides'));
-app.use('/api/bookings', require('./routes/bookings'));
-app.use('/api/trips', require('./routes/trips'));
-app.use('/api/vehicles', require('./routes/vehicles'));
-app.use('/api/routes', require('./routes/routes'));
-app.use('/api/wallet', require('./routes/wallet'));
-app.use('/api/payments', require('./routes/payments'));
-app.use('/api/reports', require('./routes/reports'));
+app.use('/api/user', requireAuth, requireRole('employee', 'admin'), require('./routes/user'));
+app.use('/api/rides', requireAuth, requireRole('employee'), require('./routes/rides'));
+app.use('/api/bookings', requireAuth, requireRole('employee'), require('./routes/bookings'));
+app.use('/api/trips', requireAuth, requireRole('employee'), require('./routes/trips'));
+app.use('/api/vehicles', requireAuth, requireRole('employee'), require('./routes/vehicles'));
+app.use('/api/routes', requireAuth, requireRole('employee'), require('./routes/routes'));
+app.use('/api/wallet', requireAuth, requireRole('employee'), require('./routes/wallet'));
+app.use('/api/payments', requireAuth, requireRole('employee'), require('./routes/payments'));
+app.use('/api/reports', requireAuth, requireRole('employee', 'admin'), require('./routes/reports'));
 app.use('/api/admin', require('./routes/admin'));
-app.use('/api/saved-places', require('./routes/saved-places'));
-// app.use('/api/reports',  require('./routes/reports'));
+app.use('/api/saved-places', requireAuth, requireRole('employee'), require('./routes/savedPlaces'));
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ message: 'Route not found' }));

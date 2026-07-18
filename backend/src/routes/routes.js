@@ -9,10 +9,10 @@ const router = express.Router();
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/routes/calculate
 // Proxies route query to public OSRM API
-// Body: { pickup: { lat, lng }, destination: { lat, lng } }
+// Body: { pickup: { lat, lng }, destination: { lat, lng }, stops?: [{ lat, lng }] }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/calculate', requireAuth, async (req, res) => {
-  const { pickup, destination } = req.body;
+  const { pickup, destination, stops } = req.body;
 
   if (!pickup || pickup.lat === undefined || pickup.lng === undefined) {
     return res.status(400).json({ message: 'pickup with lat and lng coordinates is required.' });
@@ -32,7 +32,18 @@ router.post('/calculate', requireAuth, async (req, res) => {
   }
 
   try {
-    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pLng},${pLat};${dLng},${dLat}?overview=full&geometries=geojson`;
+    // Build OSRM waypoints string: pickup;stop1;stop2;...;destination
+    const validatedStops = (stops || []).filter(s =>
+      s && !isNaN(parseFloat(s.lat)) && !isNaN(parseFloat(s.lng))
+    );
+
+    const waypoints = [
+      `${pLng},${pLat}`,
+      ...validatedStops.map(s => `${parseFloat(s.lng)},${parseFloat(s.lat)}`),
+      `${dLng},${dLat}`
+    ].join(';');
+
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${waypoints}?overview=full&geometries=geojson`;
     
     const osrmResponse = await fetch(osrmUrl, {
       headers: {
@@ -55,10 +66,19 @@ router.post('/calculate', requireAuth, async (req, res) => {
     const durationMinutes = Math.round(route.duration / 60);
     const routeGeometry = route.geometry;
 
+    // Return per-leg distances for fare breakdown when stops are provided
+    const legs = route.legs.map((leg, idx) => ({
+      index: idx,
+      distanceKm: parseFloat((leg.distance / 1000).toFixed(1)),
+      durationMinutes: Math.round(leg.duration / 60)
+    }));
+
     return res.status(200).json({
       distanceKm,
       durationMinutes,
-      routeGeometry
+      routeGeometry,
+      legs, // Per-segment breakdown for stops fare calculation
+      stopsCount: validatedStops.length
     });
   } catch (err) {
     console.error('[calculateRoute]', err);

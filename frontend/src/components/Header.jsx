@@ -7,20 +7,15 @@ export const Header = ({ onProfileClick, currentTab, setCurrentTab, showTabs }) 
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef(null);
 
-  const tabs = user?.role === 'admin'
-    ? [
-        { id: 'dashboard', label: 'Admin Dashboard' },
-        { id: 'report',  label: 'Reports & Analytics' }
-      ]
-    : [
-        { id: 'dashboard', label: 'Dashboard' },
-        { id: 'trips',   label: 'My Trips' },
-        { id: 'vehicle', label: 'My Vehicle' },
-        { id: 'history', label: 'Ride History' },
-        { id: 'wallet',  label: 'Wallet' },
-        { id: 'setting', label: 'Setting' },
-        { id: 'report',  label: 'Report' },
-      ];
+  const tabs = [
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'trips',   label: 'My Trips' },
+    { id: 'vehicle', label: 'My Vehicle' },
+    { id: 'history', label: 'Ride History' },
+    { id: 'wallet',  label: 'Wallet' },
+    { id: 'setting', label: 'Setting' },
+    { id: 'report',  label: 'Report' },
+  ];
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -46,15 +41,19 @@ export const Header = ({ onProfileClick, currentTab, setCurrentTab, showTabs }) 
       {/* Navigation tabs - visible on Dashboard */}
       {showTabs && (
         <nav className="header-tabs">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              className={`header-tab ${currentTab === tab.id ? 'active' : ''}`}
-              onClick={() => setCurrentTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {tabs.map((tab) => {
+            const isTabActive = currentTab === tab.id || 
+              (tab.id === 'setting' && ['saved-places', 'help', 'chat'].includes(currentTab));
+            return (
+              <button
+                key={tab.id}
+                className={`header-tab ${isTabActive ? 'active' : ''}`}
+                onClick={() => setCurrentTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </nav>
       )}
 

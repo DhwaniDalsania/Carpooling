@@ -1,15 +1,18 @@
+// src/routes/savedPlaces.js
+// Router for CRUD operations on Saved Places
+
 const express = require('express');
 const { prisma, withRetry } = require('../lib/prisma');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Apply authentication middleware
+// Apply authentication and employee/admin access to saved places
 router.use(requireAuth);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/saved-places
-// List all saved places of the user
+// Retrieve all saved places for the logged-in user
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
@@ -19,11 +22,10 @@ router.get('/', async (req, res) => {
         orderBy: { createdAt: 'desc' }
       })
     );
-
     return res.status(200).json(places);
   } catch (err) {
     console.error('[getSavedPlaces]', err);
-    return res.status(500).json({ message: 'Failed to fetch saved places.' });
+    return res.status(500).json({ message: 'Failed to retrieve saved places.' });
   }
 });
 
@@ -50,7 +52,6 @@ router.post('/', async (req, res) => {
         }
       })
     );
-
     return res.status(201).json(newPlace);
   } catch (err) {
     console.error('[createSavedPlace]', err);
@@ -59,21 +60,22 @@ router.post('/', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/saved-places/:id
-// Update an existing saved place
+// PATCH /api/saved-places/:id
+// Update a saved place
 // ─────────────────────────────────────────────────────────────────────────────
-router.put('/:id', async (req, res) => {
-  const { id } = req.params;
+router.patch('/:id', async (req, res) => {
   const { label, address, lat, lng } = req.body;
+  const { id } = req.params;
 
   try {
-    const place = await withRetry(() => prisma.savedPlace.findUnique({ where: { id } }));
-    if (!place) {
-      return res.status(404).json({ message: 'Saved place not found.' });
-    }
+    const existing = await withRetry(() =>
+      prisma.savedPlace.findUnique({
+        where: { id }
+      })
+    );
 
-    if (place.userId !== req.user.id) {
-      return res.status(403).json({ message: 'Unauthorized.' });
+    if (!existing || existing.userId !== req.user.id) {
+      return res.status(404).json({ message: 'Saved place not found.' });
     }
 
     const updated = await withRetry(() =>
@@ -103,16 +105,21 @@ router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    const place = await withRetry(() => prisma.savedPlace.findUnique({ where: { id } }));
-    if (!place) {
+    const existing = await withRetry(() =>
+      prisma.savedPlace.findUnique({
+        where: { id }
+      })
+    );
+
+    if (!existing || existing.userId !== req.user.id) {
       return res.status(404).json({ message: 'Saved place not found.' });
     }
 
-    if (place.userId !== req.user.id) {
-      return res.status(403).json({ message: 'Unauthorized.' });
-    }
-
-    await withRetry(() => prisma.savedPlace.delete({ where: { id } }));
+    await withRetry(() =>
+      prisma.savedPlace.delete({
+        where: { id }
+      })
+    );
 
     return res.status(200).json({ message: 'Saved place deleted successfully.' });
   } catch (err) {

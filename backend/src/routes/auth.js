@@ -13,6 +13,25 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_change_me';
 const SALT_ROUNDS = 10;
 
+async function generateUniqueInviteCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let isUnique = false;
+  let code = '';
+  while (!isUnique) {
+    code = '';
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const existing = await withRetry(() =>
+      prisma.organization.findUnique({ where: { code } })
+    );
+    if (!existing) {
+      isUnique = true;
+    }
+  }
+  return code;
+}
+
 // ── Helper: sign JWT ──────────────────────────────────────────────────────────
 function signToken(user) {
   return jwt.sign(
@@ -62,8 +81,14 @@ router.post('/register', async (req, res) => {
     photoUrl,
   } = req.body;
 
-  if (!name || !email || !password || !organizationCode) {
-    return res.status(400).json({ message: 'name, email, password, organizationCode are required' });
+  const isCreatingOrg = !!orgName;
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: 'Name, email, and password are required.' });
+  }
+
+  if (!isCreatingOrg && !organizationCode) {
+    return res.status(400).json({ message: 'Organization Invite Code is required.' });
   }
 
   try {
@@ -75,31 +100,39 @@ router.post('/register', async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // Find or create the organisation
-    let org = await withRetry(() => prisma.organization.findUnique({ where: { code: organizationCode } }));
+    let org;
     let role = 'employee';
 
-    if (!org) {
-      // First user with this code → becomes admin and creates the org
-      if (!orgName || !registeredAddress || !industry || !adminContact) {
+    if (isCreatingOrg) {
+      if (!registeredAddress || !industry || !adminContact) {
         return res.status(400).json({
-          message:
-            'Organization not found. To create a new org, also provide: orgName, registeredAddress, industry, adminContact',
+          message: 'To create a new organization, also provide: registeredAddress, industry, adminContact',
         });
       }
+      
+      const generatedCode = await generateUniqueInviteCode();
+      
       org = await withRetry(() => prisma.organization.create({
         data: {
           name: orgName,
           registeredAddress,
           industry,
           adminContact,
-          code: organizationCode,
+          code: generatedCode,
           fuelCostPerLitre: fuelCostPerLitre ?? 0,
           costPerKm: costPerKm ?? 0,
           travelCostPerKm: travelCostPerKm ?? 0,
         },
       }));
-      role = 'admin'; // First registrant becomes admin
+      role = 'admin';
+    } else {
+      // Find the existing organization
+      org = await withRetry(() => prisma.organization.findUnique({
+        where: { code: organizationCode.trim().toUpperCase() }
+      }));
+      if (!org) {
+        return res.status(400).json({ message: 'Invalid Organization Invite Code.' });
+      }
     }
 
     const user = await withRetry(() => prisma.user.create({

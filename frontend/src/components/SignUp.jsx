@@ -171,9 +171,9 @@ export const SignUp = ({ onNavigateToLogin, onNavigateBack }) => {
                     </div>
                   </div>
 
-                  {/* Organization Code field */}
+                  {/* Organization Invite Code field */}
                   <div className="form-group">
-                    <label className="form-label">Organization Code</label>
+                    <label className="form-label">Organization Invite Code</label>
                     <div className="input-icon-wrapper">
                       <div className="input-icon-left">
                         <Building size={18} />
@@ -181,7 +181,7 @@ export const SignUp = ({ onNavigateToLogin, onNavigateBack }) => {
                       <input
                         type="text"
                         className="input-field"
-                        placeholder="Enter your organization code"
+                        placeholder="Enter your organization invite code"
                         value={orgCode}
                         onChange={(e) => setOrgCode(e.target.value)}
                         disabled={isLoading || successMessage}

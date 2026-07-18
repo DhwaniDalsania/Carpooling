@@ -6,6 +6,7 @@ import Splash from './components/Splash';
 import Login from './components/Login';
 import SignUp from './components/SignUp';
 import Dashboard from './components/Dashboard';
+import AdminDashboard from './components/AdminDashboard';
 import ProfileModal from './components/ProfileModal';
 import RouteConfirmation from './components/RouteConfirmation';
 import AvailableRides from './components/AvailableRides';
@@ -65,6 +66,9 @@ function MainAppContent() {
       );
       
     case 'dashboard':
+      if (user?.role === 'admin') {
+        return <AdminDashboard onProfileClick={() => setIsProfileOpen(true)} />;
+      }
       return (
         <>
           <Dashboard 

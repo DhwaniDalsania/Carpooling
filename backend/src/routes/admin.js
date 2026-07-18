@@ -1,34 +1,50 @@
+// src/routes/admin.js
+// Router for Company Administrators to manage employees, vehicles, and settings
+
 const express = require('express');
-const bcrypt = require('bcryptjs');
 const { prisma, withRetry } = require('../lib/prisma');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const bcrypt = require('bcryptjs');
 
 const router = express.Router();
-const SALT_ROUNDS = 10;
 
-// Apply admin role middleware to all routes in this router
-router.use(requireAuth);
-router.use(requireRole('admin'));
+async function generateUniqueInviteCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let isUnique = false;
+  let code = '';
+  while (!isUnique) {
+    code = '';
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const existing = await withRetry(() =>
+      prisma.organization.findUnique({ where: { code } })
+    );
+    if (!existing) {
+      isUnique = true;
+    }
+  }
+  return code;
+}
 
-// ─────────────────────────────────────────────────────────────────────────────
+// Apply admin access restriction to all sub-routes
+router.use(requireAuth, requireRole('admin'));
+
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // GET /api/admin/stats
-// Scoped to the organization
-// ─────────────────────────────────────────────────────────────────────────────
+// Fetch admin dashboard counters
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 router.get('/stats', async (req, res) => {
   try {
     const orgId = req.user.organizationId;
 
     const totalEmployees = await withRetry(() =>
-      prisma.user.count({
-        where: { organizationId: orgId }
-      })
+      prisma.user.count({ where: { organizationId: orgId } })
     );
 
     const registeredVehicles = await withRetry(() =>
       prisma.vehicle.count({
-        where: {
-          user: { organizationId: orgId }
-        }
+        where: { user: { organizationId: orgId } }
       })
     );
 
@@ -52,14 +68,14 @@ router.get('/stats', async (req, res) => {
     });
   } catch (err) {
     console.error('[adminStats]', err);
-    return res.status(500).json({ message: 'Failed to fetch admin stats.' });
+    return res.status(500).json({ message: 'Failed to retrieve admin stats.' });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // GET /api/admin/employees
-// List employees in organization
-// ─────────────────────────────────────────────────────────────────────────────
+// Fetch all employees in the organization
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 router.get('/employees', async (req, res) => {
   try {
     const employees = await withRetry(() =>
@@ -69,26 +85,30 @@ router.get('/employees', async (req, res) => {
           id: true,
           name: true,
           email: true,
+          role: true,
           department: true,
           managerName: true,
           location: true,
-          platformAccess: true
+          platformAccess: true,
+          createdAt: true,
+          organization: {
+            select: { code: true }
+          }
         },
         orderBy: { name: 'asc' }
       })
     );
-
     return res.status(200).json(employees);
   } catch (err) {
     console.error('[adminEmployees]', err);
-    return res.status(500).json({ message: 'Failed to fetch employees list.' });
+    return res.status(500).json({ message: 'Failed to retrieve employee list.' });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // POST /api/admin/employees
-// Add a new employee to the organization
-// ─────────────────────────────────────────────────────────────────────────────
+// Create a new employee directly
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 router.post('/employees', async (req, res) => {
   const { name, email, password, department, managerName, location } = req.body;
 
@@ -97,18 +117,22 @@ router.post('/employees', async (req, res) => {
   }
 
   try {
-    const existing = await withRetry(() => prisma.user.findUnique({ where: { email } }));
+    const existing = await withRetry(() =>
+      prisma.user.findUnique({ where: { email: email.toLowerCase() } })
+    );
+
     if (existing) {
-      return res.status(409).json({ message: 'Employee with this email already exists.' });
+      return res.status(400).json({ message: 'Email address already registered.' });
     }
 
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
 
-    const newEmployee = await withRetry(() =>
+    const newUser = await withRetry(() =>
       prisma.user.create({
         data: {
           name,
-          email,
+          email: email.toLowerCase(),
           passwordHash,
           role: 'employee',
           organizationId: req.user.organizationId,
@@ -120,20 +144,16 @@ router.post('/employees', async (req, res) => {
       })
     );
 
-    // Auto-create wallet
-    await withRetry(() => prisma.wallet.create({ data: { userId: newEmployee.id, balance: 0 } }));
+    // Auto-create wallet for new employee
+    await withRetry(() =>
+      prisma.wallet.create({
+        data: { userId: newUser.id, balance: 500.0 }
+      })
+    );
 
     return res.status(201).json({
-      message: 'Employee added successfully!',
-      employee: {
-        id: newEmployee.id,
-        name: newEmployee.name,
-        email: newEmployee.email,
-        department: newEmployee.department,
-        managerName: newEmployee.managerName,
-        location: newEmployee.location,
-        platformAccess: newEmployee.platformAccess
-      }
+      message: 'Employee registered successfully.',
+      userId: newUser.id
     });
   } catch (err) {
     console.error('[adminAddEmployee]', err);
@@ -141,60 +161,54 @@ router.post('/employees', async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // PATCH /api/admin/employees/:id/access
-// Toggle platformAccess (grant/revoke)
-// ─────────────────────────────────────────────────────────────────────────────
+// Toggle platform access for an employee
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 router.patch('/employees/:id/access', async (req, res) => {
+  const { platformAccess } = req.body;
   const { id } = req.params;
 
-  if (id === req.user.id) {
-    return res.status(400).json({ message: 'You cannot revoke platform access for yourself.' });
+  if (platformAccess === undefined) {
+    return res.status(400).json({ message: 'platformAccess parameter is required.' });
   }
 
   try {
-    const employee = await withRetry(() => prisma.user.findUnique({ where: { id } }));
-    if (!employee) {
+    const userToEdit = await withRetry(() =>
+      prisma.user.findUnique({ where: { id } })
+    );
+
+    if (!userToEdit || userToEdit.organizationId !== req.user.organizationId) {
       return res.status(404).json({ message: 'Employee not found.' });
     }
 
-    if (employee.organizationId !== req.user.organizationId) {
-      return res.status(403).json({ message: 'Unauthorized.' });
+    if (userToEdit.id === req.user.id) {
+      return res.status(400).json({ message: 'Admins cannot revoke their own access.' });
     }
 
-    const updated = await withRetry(() =>
+    await withRetry(() =>
       prisma.user.update({
         where: { id },
-        data: { platformAccess: !employee.platformAccess },
-        select: {
-          id: true,
-          name: true,
-          platformAccess: true
-        }
+        data: { platformAccess: !!platformAccess }
       })
     );
 
-    return res.status(200).json({
-      message: `Access ${updated.platformAccess ? 'granted' : 'revoked'} successfully.`,
-      employee: updated
-    });
+    return res.status(200).json({ message: 'Employee access status updated.' });
   } catch (err) {
     console.error('[adminToggleAccess]', err);
-    return res.status(500).json({ message: 'Failed to toggle employee access.' });
+    return res.status(500).json({ message: 'Failed to update access status.' });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // GET /api/admin/vehicles
-// List vehicles of organization
-// ─────────────────────────────────────────────────────────────────────────────
+// Fetch all registered vehicles in the organization
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 router.get('/vehicles', async (req, res) => {
   try {
     const vehicles = await withRetry(() =>
       prisma.vehicle.findMany({
-        where: {
-          user: { organizationId: req.user.organizationId }
-        },
+        where: { user: { organizationId: req.user.organizationId } },
         include: {
           user: {
             select: { name: true }
@@ -204,6 +218,7 @@ router.get('/vehicles', async (req, res) => {
       })
     );
 
+    // Map to driver name directly as requested
     const formatted = vehicles.map(v => ({
       id: v.id,
       registrationNumber: v.registrationNumber,
@@ -216,58 +231,52 @@ router.get('/vehicles', async (req, res) => {
     return res.status(200).json(formatted);
   } catch (err) {
     console.error('[adminVehicles]', err);
-    return res.status(500).json({ message: 'Failed to fetch vehicles list.' });
+    return res.status(500).json({ message: 'Failed to retrieve vehicle list.' });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // PATCH /api/admin/vehicles/:id/status
-// Set active/inactive status
-// ─────────────────────────────────────────────────────────────────────────────
+// Set vehicle active/inactive
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 router.patch('/vehicles/:id/status', async (req, res) => {
-  const { id } = req.params;
   const { status } = req.body;
+  const { id } = req.params;
 
   if (status !== 'active' && status !== 'inactive') {
-    return res.status(400).json({ message: 'Status must be active or inactive.' });
+    return res.status(400).json({ message: "Status must be 'active' or 'inactive'." });
   }
 
   try {
-    const vehicle = await withRetry(() => prisma.vehicle.findUnique({ where: { id }, include: { user: true } }));
-    if (!vehicle) {
-      return res.status(404).json({ message: 'Vehicle not found.' });
-    }
-
-    if (vehicle.user.organizationId !== req.user.organizationId) {
-      return res.status(403).json({ message: 'Unauthorized.' });
-    }
-
-    const updated = await withRetry(() =>
-      prisma.vehicle.update({
+    const vehicle = await withRetry(() =>
+      prisma.vehicle.findUnique({
         where: { id },
-        data: { status },
-        select: {
-          id: true,
-          registrationNumber: true,
-          status: true
-        }
+        include: { user: true }
       })
     );
 
-    return res.status(200).json({
-      message: 'Vehicle status updated successfully.',
-      vehicle: updated
-    });
+    if (!vehicle || vehicle.user.organizationId !== req.user.organizationId) {
+      return res.status(404).json({ message: 'Vehicle not found.' });
+    }
+
+    await withRetry(() =>
+      prisma.vehicle.update({
+        where: { id },
+        data: { status }
+      })
+    );
+
+    return res.status(200).json({ message: 'Vehicle status updated successfully.' });
   } catch (err) {
-    console.error('[adminVehicleStatus]', err);
+    console.error('[adminUpdateVehicleStatus]', err);
     return res.status(500).json({ message: 'Failed to update vehicle status.' });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // GET /api/admin/settings
-// Fetch current organization details
-// ─────────────────────────────────────────────────────────────────────────────
+// Fetch organization-wide configuration
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 router.get('/settings', async (req, res) => {
   try {
     const org = await withRetry(() =>
@@ -275,32 +284,26 @@ router.get('/settings', async (req, res) => {
         where: { id: req.user.organizationId }
       })
     );
-
-    if (!org) {
-      return res.status(404).json({ message: 'Organization not found.' });
-    }
-
     return res.status(200).json({
-      id: org.id,
       name: org.name,
       registeredAddress: org.registeredAddress,
       industry: org.industry,
       adminContact: org.adminContact,
-      code: org.code,
       fuelCostPerLitre: org.fuelCostPerLitre,
       costPerKm: org.costPerKm,
-      travelCostPerKm: org.travelCostPerKm
+      travelCostPerKm: org.travelCostPerKm,
+      code: org.code
     });
   } catch (err) {
     console.error('[adminGetSettings]', err);
-    return res.status(500).json({ message: 'Failed to fetch settings.' });
+    return res.status(500).json({ message: 'Failed to retrieve settings.' });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // PATCH /api/admin/settings
-// Update organization details
-// ─────────────────────────────────────────────────────────────────────────────
+// Update organization configuration
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 router.patch('/settings', async (req, res) => {
   const { name, registeredAddress, industry, adminContact, fuelCostPerLitre, costPerKm, travelCostPerKm } = req.body;
 
@@ -321,22 +324,36 @@ router.patch('/settings', async (req, res) => {
     );
 
     return res.status(200).json({
-      message: 'Organization settings updated successfully.',
-      settings: {
-        id: updated.id,
-        name: updated.name,
-        registeredAddress: updated.registeredAddress,
-        industry: updated.industry,
-        adminContact: updated.adminContact,
-        code: updated.code,
-        fuelCostPerLitre: updated.fuelCostPerLitre,
-        costPerKm: updated.costPerKm,
-        travelCostPerKm: updated.travelCostPerKm
-      }
+      message: 'Organization configurations updated successfully.',
+      organization: updated
     });
   } catch (err) {
     console.error('[adminUpdateSettings]', err);
     return res.status(500).json({ message: 'Failed to update settings.' });
+  }
+});
+
+// POST /api/admin/settings/regenerate-code
+// Regenerate organization invite code
+router.post('/settings/regenerate-code', async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const generatedCode = await generateUniqueInviteCode();
+    
+    await withRetry(() =>
+      prisma.organization.update({
+        where: { id: orgId },
+        data: { code: generatedCode }
+      })
+    );
+    
+    return res.status(200).json({
+      message: 'Organization invite code regenerated successfully.',
+      code: generatedCode
+    });
+  } catch (err) {
+    console.error('[regenerateInviteCode]', err);
+    return res.status(500).json({ message: 'Failed to regenerate invite code.' });
   }
 });
 

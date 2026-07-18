@@ -62,7 +62,12 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
     setErrorMsg('');
     try {
       const response = await fetch(
-        `/api/rides/search?pickupLat=${query.pickupLat}&pickupLng=${query.pickupLng}&destLat=${query.destLat}&destLng=${query.destLng}&seats=${query.seats}&date=${query.date}`
+        `/api/rides/search?pickupLat=${query.pickupLat}&pickupLng=${query.pickupLng}&destLat=${query.destLat}&destLng=${query.destLng}&seats=${query.seats}&date=${query.date}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
       );
       const data = await response.json();
       

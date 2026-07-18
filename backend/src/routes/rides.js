@@ -25,7 +25,8 @@ router.post('/', requireAuth, async (req, res) => {
     farePerSeat,
     vehicleId,
     routeGeoJson,
-    distanceKm
+    distanceKm,
+    stops
   } = req.body;
 
   if (!pickupAddress || !destAddress || !datetime || !availableSeats || !farePerSeat || !vehicleId) {
@@ -103,6 +104,7 @@ router.post('/', requireAuth, async (req, res) => {
             farePerSeat: fareFloat,
             routeGeoJson: routeGeoJson || null,
             distanceKm: dist,
+            stops: stops && Array.isArray(stops) && stops.length > 0 ? JSON.stringify(stops) : null,
             status: 'active'
           }
         });
@@ -136,7 +138,7 @@ router.post('/', requireAuth, async (req, res) => {
 // Search for available rides matching coordinates and seats
 // Query params: pickupLat, pickupLng, destLat, destLng, seats, date
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/search', async (req, res) => {
+router.get('/search', requireAuth, async (req, res) => {
   const { pickupLat, pickupLng, destLat, destLng, seats, date } = req.query;
 
   try {
@@ -162,8 +164,8 @@ router.get('/search', async (req, res) => {
         gte: startOfSearchDate,
         lte: endOfSearchDate
       },
-      vehicle: {
-        status: 'active'
+      driver: {
+        organizationId: req.user.organizationId
       }
     };
 
