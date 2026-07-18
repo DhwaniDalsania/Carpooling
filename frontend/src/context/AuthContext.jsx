@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }) => {
       setUser(data.user);
       return data.user;
     } catch (err) {
-      setError(err.message);
+      setError(err.message === 'Failed to fetch' ? 'Server is unreachable. Please make sure the backend is running.' : err.message);
       throw err;
     } finally {
       setIsLoading(false);
@@ -68,7 +68,14 @@ export const AuthProvider = ({ children }) => {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, organizationCode, phone, photo })
+        body: JSON.stringify({ 
+          name, 
+          email, 
+          password, 
+          organizationCode, 
+          phone, 
+          photoUrl: photo // Align 'photo' with backend's expected 'photoUrl'
+        })
       });
       
       const data = await parseJsonResponse(response);
@@ -79,7 +86,7 @@ export const AuthProvider = ({ children }) => {
 
       return data.message;
     } catch (err) {
-      setError(err.message);
+      setError(err.message === 'Failed to fetch' ? 'Server is unreachable. Please make sure the backend is running.' : err.message);
       throw err;
     } finally {
       setIsLoading(false);
@@ -109,7 +116,7 @@ export const AuthProvider = ({ children }) => {
       setUser(data.user);
       return data.user;
     } catch (err) {
-      setError(err.message);
+      setError(err.message === 'Failed to fetch' ? 'Server is unreachable. Please make sure the backend is running.' : err.message);
       throw err;
     } finally {
       setIsLoading(false);

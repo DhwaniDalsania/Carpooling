@@ -41,11 +41,27 @@ router.post('/', requireAuth, async (req, res) => {
     const dLng = parseFloat(destLng) || 0.0;
     const dist = parseFloat(distanceKm) || 0.0;
 
+    // Validate farePerSeat > 0
+    if (isNaN(fareFloat) || fareFloat <= 0) {
+      return res.status(400).json({ message: 'farePerSeat must be a number greater than 0.' });
+    }
+
+    // Validate availableSeats > 0
+    if (isNaN(seatsInt) || seatsInt <= 0) {
+      return res.status(400).json({ message: 'availableSeats must be a positive integer.' });
+    }
+
+    // Validate datetime is in the future
+    const parsedDate = new Date(datetime);
+    if (isNaN(parsedDate.getTime()) || parsedDate <= new Date()) {
+      return res.status(400).json({ message: 'datetime must be a valid future date and time.' });
+    }
+
     // Ensure the vehicle exists in database to prevent foreign key constraint failure
     let vehicle = await withRetry(() => prisma.vehicle.findUnique({ where: { id: vehicleId } }));
     if (!vehicle) {
       const regNum = vehicleId === 'v1' ? 'GJ01AB1234' : (vehicleId === 'v2' ? 'GJ01CD5678' : 'GJ01EF9012_' + Math.random().toString(36).substring(2, 6));
-      await withRetry(() =>
+      vehicle = await withRetry(() =>
         prisma.vehicle.create({
           data: {
             id: vehicleId,
@@ -57,6 +73,11 @@ router.post('/', requireAuth, async (req, res) => {
           }
         })
       );
+    }
+
+    // Validate availableSeats <= vehicle.seatingCapacity
+    if (seatsInt > vehicle.seatingCapacity) {
+      return res.status(400).json({ message: `availableSeats (${seatsInt}) cannot exceed vehicle seating capacity (${vehicle.seatingCapacity}).` });
     }
 
     const ride = await withRetry(() =>
@@ -100,10 +121,10 @@ router.get('/search', async (req, res) => {
 
   try {
     const seatsInt = parseInt(seats, 10) || 1;
-    const pLat = parseFloat(pickupLat);
-    const pLng = parseFloat(pickupLng);
-    const dLat = parseFloat(destLat);
-    const dLng = parseFloat(destLng);
+    const pLat = parseFloat(pickupLat || req.query.pickup_lat);
+    const pLng = parseFloat(pickupLng || req.query.pickup_lng);
+    const dLat = parseFloat(destLat || req.query.dest_lat);
+    const dLng = parseFloat(destLng || req.query.dest_lng);
 
     let whereClause = {
       status: 'active',
@@ -146,6 +167,16 @@ router.get('/search', async (req, res) => {
           orderBy: { datetime: 'asc' }
         })
       );
+    }
+
+    // Sort rides by Euclidean distance to pickup coordinates if provided
+    if (!isNaN(pLat) && !isNaN(pLng)) {
+      rides.forEach(ride => {
+        ride.distanceToPickup = Math.sqrt(
+          Math.pow(ride.pickupLat - pLat, 2) + Math.pow(ride.pickupLng - pLng, 2)
+        );
+      });
+      rides.sort((a, b) => a.distanceToPickup - b.distanceToPickup);
     }
 
     return res.status(200).json(rides);

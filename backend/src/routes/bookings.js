@@ -23,38 +23,42 @@ router.post('/', requireAuth, async (req, res) => {
   const seatsToBook = parseInt(seatsBooked, 10) || 1;
 
   try {
-    // 1. Fetch the ride and make sure it has capacity
-    const ride = await withRetry(() =>
-      prisma.ride.findUnique({
-        where: { id: rideId }
-      })
-    );
-
-    if (!ride) {
-      return res.status(404).json({ message: 'Ride not found.' });
-    }
-
-    if (ride.status !== 'active') {
-      return res.status(400).json({ message: `Cannot book: ride is currently ${ride.status}.` });
-    }
-
-    if (ride.availableSeats < seatsToBook) {
-      return res.status(400).json({ message: `Insufficient seats. Only ${ride.availableSeats} seats left.` });
-    }
-
-    // 2. Decrement seats and update status
-    const remainingSeats = ride.availableSeats - seatsToBook;
-    const newStatus = remainingSeats === 0 ? 'full' : 'active';
-
-    await withRetry(() =>
-      prisma.ride.update({
-        where: { id: rideId },
+    // 1. Perform atomic database-level seat hold verification and decrement
+    const updateResult = await withRetry(() =>
+      prisma.ride.updateMany({
+        where: {
+          id: rideId,
+          status: 'active',
+          availableSeats: { gte: seatsToBook }
+        },
         data: {
-          availableSeats: remainingSeats,
-          status: newStatus
+          availableSeats: { decrement: seatsToBook }
         }
       })
     );
+
+    if (updateResult.count === 0) {
+      // Find reason for failure to return a helpful error message
+      const currentRide = await withRetry(() => prisma.ride.findUnique({ where: { id: rideId } }));
+      if (!currentRide) {
+        return res.status(404).json({ message: 'Ride not found.' });
+      }
+      if (currentRide.status !== 'active') {
+        return res.status(400).json({ message: `Cannot book: ride is currently ${currentRide.status}.` });
+      }
+      return res.status(400).json({ message: `Insufficient seats. Only ${currentRide.availableSeats} seats left.` });
+    }
+
+    // Fetch the updated ride to verify if status needs to be updated to 'full'
+    const ride = await withRetry(() => prisma.ride.findUnique({ where: { id: rideId } }));
+    if (ride.availableSeats === 0) {
+      await withRetry(() =>
+        prisma.ride.update({
+          where: { id: rideId },
+          data: { status: 'full' }
+        })
+      );
+    }
 
     // 3. Create the Booking entry
     const booking = await withRetry(() =>
@@ -68,23 +72,39 @@ router.post('/', requireAuth, async (req, res) => {
       })
     );
 
-    // 4. Create the Trip entry representing the trip execution session
-    const trip = await withRetry(() =>
-      prisma.trip.create({
+    // 4. Create or update the Trip entry representing the physical ride session
+    const additionalFare = ride.farePerSeat * seatsToBook;
+    
+    let trip = await withRetry(() => prisma.trip.findFirst({ where: { rideId } }));
+    
+    if (trip) {
+      trip = await withRetry(() => prisma.trip.update({
+        where: { id: trip.id },
+        data: { fare: trip.fare + additionalFare }
+      }));
+    } else {
+      trip = await withRetry(() => prisma.trip.create({
         data: {
           rideId,
           driverId: ride.driverId,
           vehicleId: ride.vehicleId,
           status: 'booked',
-          fare: ride.farePerSeat * seatsToBook,
+          fare: additionalFare,
         }
-      })
-    );
+      }));
+    }
 
     // 5. Connect the passenger to the trip via the TripPassenger join table
     await withRetry(() =>
-      prisma.tripPassenger.create({
-        data: {
+      prisma.tripPassenger.upsert({
+        where: {
+          tripId_userId: {
+            tripId: trip.id,
+            userId: req.user.id
+          }
+        },
+        update: {},
+        create: {
           tripId: trip.id,
           userId: req.user.id
         }

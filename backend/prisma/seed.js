@@ -2,13 +2,22 @@
 // Run via: npx prisma db seed   OR   node prisma/seed.js
 // Creates 1 demo org + 3 users (1 admin, 2 employees) for demo/testing.
 
+require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DIRECT_URL || process.env.DATABASE_URL,
+    },
+  },
+});
 
 async function main() {
   console.log('🌱 Seeding database...');
+  console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'set' : 'not set');
+  console.log('DIRECT_URL:', process.env.DIRECT_URL ? 'set' : 'not set');
 
   // Upsert demo organisation (idempotent — safe to re-run)
   const org = await prisma.organization.upsert({
