@@ -574,6 +574,20 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                       <Phone size={16} />
                       <span>Call To Driver</span>
                     </button>
+                    <button 
+                      className="btn btn-primary" 
+                      style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}
+                      onClick={() => onNavigate('track-ride', {
+                        pickupLocation: 'Iskcon',
+                        destination: 'Infocity',
+                        driverName: 'Raj Patel',
+                        vehicleName: 'Swift Dzire',
+                        vehicleReg: 'GJ01AB1234'
+                      })}
+                    >
+                      <Navigation size={16} />
+                      <span>Track Ride</span>
+                    </button>
                   </div>
 
                   {/* Fare group */}

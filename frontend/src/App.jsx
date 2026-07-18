@@ -9,6 +9,7 @@ import Dashboard from './components/Dashboard';
 import ProfileModal from './components/ProfileModal';
 import RouteConfirmation from './components/RouteConfirmation';
 import AvailableRides from './components/AvailableRides';
+import TrackRide from './components/TrackRide';
 
 function MainAppContent() {
   const { user } = useAuth();
@@ -104,6 +105,22 @@ function MainAppContent() {
             onBack={() => setScreen('route-confirmation')}
             onProfileClick={() => setIsProfileOpen(true)}
             onNavigate={handleNavigate}
+          />
+
+          <ProfileModal
+            isOpen={isProfileOpen}
+            onClose={() => setIsProfileOpen(false)}
+          />
+        </>
+      );
+
+    case 'track-ride':
+      return (
+        <>
+          <TrackRide
+            routeState={routeState}
+            onBack={() => handleNavigate('dashboard', { activeTab: 'trips' })}
+            onProfileClick={() => setIsProfileOpen(true)}
           />
 
           <ProfileModal
