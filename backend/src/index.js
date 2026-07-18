@@ -46,11 +46,28 @@ chatNs.on('connection', (socket) => {
   });
 
   // message payload: { tripId, senderId, text }
-  socket.on('message:send', (data) => {
-    chatNs.to(`trip:${data.tripId}`).emit('message:new', {
-      ...data,
-      createdAt: new Date().toISOString(),
-    });
+  socket.on('message:send', async (data) => {
+    try {
+      const { prisma, withRetry } = require('./lib/prisma');
+      const savedMsg = await withRetry(() =>
+        prisma.message.create({
+          data: {
+            tripId: data.tripId,
+            senderId: data.senderId,
+            text: data.text
+          },
+          include: {
+            sender: {
+              select: { id: true, name: true, photoUrl: true }
+            }
+          }
+        })
+      );
+      chatNs.to(`trip:${data.tripId}`).emit('message:new', savedMsg);
+      chatNs.to(`trip:${data.tripId}`).emit('message:receive', savedMsg);
+    } catch (err) {
+      console.error('[Socket Chat Save Error]', err);
+    }
   });
 
   socket.on('disconnect', () => {

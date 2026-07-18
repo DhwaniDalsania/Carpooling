@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, ArrowUpDown, Clock, Users, ChevronDown, Repeat, 
   DollarSign, Car, Calendar, Navigation, MessageSquare, 
   Phone, MapPin, MoreVertical, Plus, Trash2, Wallet, Settings, Activity,
-  ArrowLeft, Check, Loader2, ArrowRight
+  ArrowLeft, Check, Loader2, ArrowRight, Play, CheckCircle2, Send, PhoneOff
 } from 'lucide-react';
+import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import Header from './Header';
 import Sidebar from './Sidebar';
@@ -15,13 +16,9 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   // Dashboard Tabs (dashboard, trips, vehicle, history, wallet, setting)
   const [currentHeaderTab, setCurrentHeaderTab] = useState('dashboard');
   const [activeSearchTab, setActiveSearchTab] = useState('find'); // 'find' or 'offer'
-
-  // Sync tab with external navigation state updates
-  useEffect(() => {
-    if (dashboardState?.activeTab) {
-      setCurrentHeaderTab(dashboardState.activeTab);
-    }
-  }, [dashboardState]);
+  
+  // Trip details drill-down state
+  const [selectedTrip, setSelectedTrip] = useState(null);
 
   // Find a Ride Form States
   const [pickupLoc, setPickupLoc] = useState('');
@@ -45,12 +42,29 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   const [historyTrips, setHistoryTrips] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
+  // Chat Panel states
+  const [chatMessages, setChatMessages] = useState([]);
+  const [typedMessage, setTypedMessage] = useState('');
+  const socketRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const chatInputRef = useRef(null);
+
+  // Simulated calling modal state
+  const [callingUser, setCallingUser] = useState(null);
+
   // Add Vehicle Form States
   const [newModel, setNewModel] = useState('');
   const [newReg, setNewReg] = useState('');
   const [newCapacity, setNewCapacity] = useState('4');
   const [newActive, setNewActive] = useState(true);
   const [vehicleSuccess, setVehicleSuccess] = useState('');
+
+  // Sync tab with external navigation state updates
+  useEffect(() => {
+    if (dashboardState?.activeTab) {
+      setCurrentHeaderTab(dashboardState.activeTab);
+    }
+  }, [dashboardState]);
 
   // ── Database Fetching Handlers ─────────────────────────────────────────────
   
@@ -64,7 +78,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
         const data = await res.json();
         setUserVehicles(data);
         const activeCar = data.find(v => v.status === 'active');
-        if (activeCar) {
+        if (activeCar && !selectedVehicle) {
           setSelectedVehicle(activeCar.id);
         }
       }
@@ -103,26 +117,94 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     }
   };
 
-  // Sync data loaders depending on current tab
+  const fetchChatHistory = async (tripId) => {
+    if (!token || !tripId) return;
+    try {
+      const res = await fetch(`/api/trips/${tripId}/messages`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setChatMessages(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch chat history', err);
+    }
+  };
+
+  // Sync data loaders on mount + 5s client polling loop
   useEffect(() => {
     if (!token) return;
 
-    const loadData = async () => {
-      setIsLoadingData(true);
-      if (currentHeaderTab === 'dashboard' || currentHeaderTab === 'vehicle') {
-        await fetchVehicles();
+    fetchVehicles();
+    fetchTrips();
+    fetchHistory();
+
+    const interval = setInterval(() => {
+      fetchTrips();
+      fetchHistory();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [token]);
+
+  // Sync selected trip drill-down with latest polled activeTrips changes
+  useEffect(() => {
+    if (selectedTrip) {
+      const updated = activeTrips.find(t => t.id === selectedTrip.id);
+      if (updated) {
+        setSelectedTrip(updated);
       }
-      if (currentHeaderTab === 'trips') {
-        await fetchTrips();
+    }
+  }, [activeTrips]);
+
+  // Socket.io Connect/Disconnect hook for Chat Namespace
+  useEffect(() => {
+    if (!token || !selectedTrip) {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
       }
-      if (currentHeaderTab === 'history') {
-        await fetchHistory();
-      }
-      setIsLoadingData(false);
+      setChatMessages([]);
+      return;
+    }
+
+    // Fetch previous persistent chat history
+    fetchChatHistory(selectedTrip.id);
+
+    // Connect to /chat namespace
+    const socket = io('/chat');
+    socketRef.current = socket;
+
+    socket.emit('join:trip', selectedTrip.id);
+
+    const handleIncomingMsg = (msg) => {
+      setChatMessages((prev) => {
+        // De-duplicate incoming messages
+        if (prev.some((m) => m.id === msg.id)) {
+          return prev;
+        }
+        return [...prev, msg];
+      });
     };
 
-    loadData();
-  }, [currentHeaderTab, token]);
+    socket.on('message:new', handleIncomingMsg);
+    socket.on('message:receive', handleIncomingMsg);
+
+    return () => {
+      socket.off('message:new', handleIncomingMsg);
+      socket.off('message:receive', handleIncomingMsg);
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [selectedTrip, token]);
+
+  // Auto-scroll chat history viewport
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages]);
 
   // Swap Locations function
   const handleSwapLocations = () => {
@@ -237,6 +319,83 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     }));
   };
 
+  // Driver status controls: Call PATCH status transitions
+  const handleUpdateStatus = async (tripId, nextStatus) => {
+    setIsLoadingData(true);
+    try {
+      const res = await fetch(`/api/trips/${tripId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: nextStatus })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to advance trip status.');
+      }
+
+      alert(`Trip status advanced successfully to: ${nextStatus === 'completed' ? 'payment pending' : nextStatus}`);
+      await fetchTrips();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  // Passenger Pay Now control
+  const handlePayment = async (tripId) => {
+    setIsLoadingData(true);
+    try {
+      const res = await fetch(`/api/trips/${tripId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: 'payment_completed' })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to process payment.');
+      }
+
+      alert('Payment confirmed! Enjoyed your ride.');
+      setSelectedTrip(null);
+      await fetchTrips();
+      await fetchHistory();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  // Chat message emit handler
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    if (!typedMessage.trim() || !socketRef.current || !selectedTrip) return;
+
+    socketRef.current.emit('message:send', {
+      tripId: selectedTrip.id,
+      senderId: user.id,
+      text: typedMessage.trim()
+    });
+
+    setTypedMessage('');
+  };
+
+  const focusChatInput = () => {
+    if (chatInputRef.current) {
+      chatInputRef.current.focus();
+      chatInputRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   const formatRideDate = (datetimeStr) => {
     if (!datetimeStr) return '';
     try {
@@ -254,8 +413,70 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     }
   };
 
+  // Helper to determine status badge styling
+  const getStatusBadge = (status) => {
+    let bg = 'rgba(107, 114, 128, 0.15)';
+    let color = '#6b7280';
+    let text = status;
+
+    switch (status) {
+      case 'booked':
+        bg = 'rgba(59, 130, 246, 0.15)';
+        color = '#3b82f6';
+        text = 'Booked';
+        break;
+      case 'started':
+        bg = 'rgba(249, 115, 22, 0.15)';
+        color = '#f97316';
+        text = 'Started';
+        break;
+      case 'in_progress':
+        bg = 'rgba(6, 182, 212, 0.15)';
+        color = '#06b6d4';
+        text = 'In Progress';
+        break;
+      case 'completed':
+        bg = 'rgba(16, 185, 129, 0.15)';
+        color = '#10b981';
+        text = 'Completed';
+        break;
+      case 'payment_pending':
+        bg = 'rgba(239, 68, 68, 0.15)';
+        color = '#ef4444';
+        text = 'Payment Pending';
+        break;
+      case 'payment_completed':
+        bg = 'rgba(16, 185, 129, 0.15)';
+        color = '#10b981';
+        text = 'Payment Completed';
+        break;
+    }
+
+    return (
+      <span style={{ 
+        fontSize: '11px', 
+        fontWeight: '600', 
+        padding: '3px 8px', 
+        borderRadius: '4px',
+        backgroundColor: bg,
+        color: color,
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px'
+      }}>
+        {text}
+      </span>
+    );
+  };
+
   // Helper to determine sidebar text rotation label
   const getSidebarLabel = () => {
+    if (currentHeaderTab === 'trips' && selectedTrip) {
+      if (selectedTrip.status === 'payment_pending') {
+        return 'Trip Finish';
+      }
+      return 'Trip Detail';
+    }
+    
     switch (currentHeaderTab) {
       case 'trips':
         return 'My Trips';
@@ -278,7 +499,10 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       <Header
         onProfileClick={onProfileClick}
         currentTab={currentHeaderTab}
-        setCurrentTab={setCurrentHeaderTab}
+        setCurrentTab={(tabId) => {
+          setCurrentHeaderTab(tabId);
+          setSelectedTrip(null); 
+        }}
         showTabs={true}
       />
 
@@ -581,219 +805,472 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
             </div>
           )}
 
-          {/* Sub-view: MY TRIPS - TRIP DETAILS (Matches Image 3 Exactly, now fully relational) */}
+          {/* Sub-view: MY TRIPS - DRILLDOWN AND CARD LISTS */}
           {currentHeaderTab === 'trips' && (
             <div className="dashboard-container" style={{ maxWidth: '800px' }}>
               
-              {/* Back Link "< Trip Detail" */}
-              <button className="back-header" onClick={() => setCurrentHeaderTab('dashboard')}>
-                <ArrowLeft size={16} />
-                <span>Trip Detail</span>
-              </button>
+              {/* Scenario 1: Drill-down Details Sub-screen */}
+              {selectedTrip ? (
+                <>
+                  {/* Back header navigation */}
+                  <button 
+                    className="back-header" 
+                    onClick={() => setSelectedTrip(null)}
+                    style={{ marginBottom: '16px' }}
+                  >
+                    <ArrowLeft size={16} />
+                    <span>{selectedTrip.status === 'payment_pending' ? 'Trip Finish' : 'Trip Detail'}</span>
+                  </button>
 
-              {isLoadingData ? (
-                <div style={{ textAlign: 'center', padding: '40px' }}>
-                  <Loader2 className="animate-spin" size={28} style={{ margin: '0 auto' }} />
-                </div>
-              ) : activeTrips.length === 0 ? (
-                <div style={{ 
-                  textAlign: 'center', 
-                  padding: '48px 24px', 
-                  backgroundColor: 'var(--bg-input)', 
-                  border: '1px dashed var(--border-color)', 
-                  borderRadius: '12px',
-                  color: 'var(--text-secondary)'
-                }}>
-                  No upcoming active trips scheduled. Search rides to book a seat, or offer a ride to publish an route!
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {activeTrips.map((trip) => {
-                    // Determine role dynamically per trip from relationship
-                    const isDriver = trip.driverId === user?.id;
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    {/* Trip Details main Card */}
+                    <div style={{ 
+                      backgroundColor: 'var(--bg-input)', 
+                      border: '1px solid var(--border-color)', 
+                      borderRadius: 'var(--radius-lg)', 
+                      padding: '28px', 
+                      boxShadow: 'var(--shadow-md)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '24px',
+                      position: 'relative'
+                    }}>
+                      {/* 3-dots actions icon */}
+                      <button style={{ 
+                        position: 'absolute', 
+                        top: '24px', 
+                        right: '24px', 
+                        background: 'none', 
+                        border: 'none', 
+                        color: 'var(--text-muted)', 
+                        cursor: 'pointer' 
+                      }}>
+                        <MoreVertical size={20} />
+                      </button>
 
-                    return (
-                      <div 
-                        key={trip.id}
-                        style={{ 
-                          backgroundColor: 'var(--bg-input)', 
-                          border: '1px solid var(--border-color)', 
-                          borderRadius: 'var(--radius-lg)', 
-                          padding: '28px', 
-                          boxShadow: 'var(--shadow-md)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '24px',
-                          position: 'relative'
-                        }}
-                      >
-                        {/* 3-dots actions icon on top-right */}
-                        <button style={{ 
-                          position: 'absolute', 
-                          top: '24px', 
-                          right: '24px', 
-                          background: 'none', 
-                          border: 'none', 
-                          color: 'var(--text-muted)', 
-                          cursor: 'pointer' 
+                      {/* Metadata Header Row */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ 
+                          fontSize: '11px', 
+                          fontWeight: '700', 
+                          textTransform: 'uppercase',
+                          letterSpacing: '1px',
+                          padding: '3px 10px', 
+                          borderRadius: '4px',
+                          backgroundColor: (selectedTrip.driverId === user?.id) ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                          color: (selectedTrip.driverId === user?.id) ? 'var(--color-brand)' : '#3b82f6'
                         }}>
-                          <MoreVertical size={20} />
-                        </button>
+                          {(selectedTrip.driverId === user?.id) ? 'Driver Mode' : 'Passenger Mode'}
+                        </span>
+                        {getStatusBadge(selectedTrip.status)}
+                      </div>
 
-                        {/* Badge specifying dynamic role */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ 
-                            fontSize: '11px', 
-                            fontWeight: '700', 
-                            textTransform: 'uppercase',
-                            letterSpacing: '1px',
-                            padding: '3px 10px', 
-                            borderRadius: '4px',
-                            backgroundColor: isDriver ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                            color: isDriver ? 'var(--color-brand)' : '#3b82f6'
-                          }}>
-                            {isDriver ? 'Driver View' : 'Passenger View'}
-                          </span>
+                      {/* Profiles Row */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ 
+                          width: '56px', 
+                          height: '56px', 
+                          borderRadius: '50%', 
+                          backgroundColor: 'var(--bg-card)', 
+                          border: '2px solid var(--border-color)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--text-secondary)'
+                        }}>
+                          <Users size={28} />
+                        </div>
+                        <div>
+                          {selectedTrip.driverId === user?.id ? (
+                            <>
+                              <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>You (Driver)</h2>
+                              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                Passenger Bookings: {selectedTrip.passengers?.length > 0 
+                                  ? selectedTrip.passengers.map(p => p.user?.name).join(', ') 
+                                  : 'None yet.'}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>
+                                {selectedTrip.driver?.name || 'Carpool Driver'}
+                              </h2>
+                              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                Route: {selectedTrip.ride?.pickupAddress} to {selectedTrip.ride?.destAddress}
+                              </div>
+                            </>
+                          )}
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {formatRideDate(selectedTrip.ride?.datetime)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Route Details Grid */}
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: '1fr 1fr 1fr', 
+                        gap: '16px', 
+                        backgroundColor: 'rgba(11, 15, 25, 0.4)', 
+                        padding: '20px', 
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-color)' 
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Vehicle</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+                            <Car size={18} className="brand-logo" />
+                            <div>
+                              <div style={{ fontSize: '14px', fontWeight: '600' }}>{selectedTrip.vehicle?.model || 'Toyota Prius'}</div>
+                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{selectedTrip.vehicle?.registrationNumber || 'GJ01AB1234'}</div>
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Driver / Passenger details row */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                          <div style={{ 
-                            width: '56px', 
-                            height: '56px', 
-                            borderRadius: '50%', 
-                            backgroundColor: 'var(--bg-card)', 
-                            border: '2px solid var(--border-color)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: 'var(--text-secondary)'
-                          }}>
-                            <Users size={28} />
+                        <div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Pick UP Point</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+                            <MapPin size={18} style={{ color: '#3b82f6' }} />
+                            <div style={{ fontSize: '14px', fontWeight: '600' }}>{selectedTrip.ride?.pickupAddress}</div>
                           </div>
-                          <div>
-                            {isDriver ? (
-                              <>
-                                <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>
-                                  You (Driver)
-                                </h2>
-                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                                  Passengers: {trip.passengers?.length > 0 
-                                    ? trip.passengers.map(p => p.user?.name).join(', ') 
-                                    : 'No passengers registered yet.'}
-                                </div>
-                              </>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Drop Point</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+                            <MapPin size={18} style={{ color: 'var(--color-brand)' }} />
+                            <div style={{ fontSize: '14px', fontWeight: '600' }}>{selectedTrip.ride?.destAddress}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bottom Bar: Action buttons and Price */}
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center', 
+                        flexWrap: 'wrap', 
+                        gap: '16px', 
+                        borderTop: '1px solid var(--border-color)', 
+                        paddingTop: '20px' 
+                      }}>
+                        
+                        {/* Driver Status Transition Controls */}
+                        {selectedTrip.driverId === user?.id ? (
+                          <div style={{ display: 'flex', gap: '12px' }}>
+                            {selectedTrip.status === 'booked' && (
+                              <button 
+                                className="btn btn-primary"
+                                style={{ display: 'flex', gap: '8px', alignItems: 'center', height: '42px', padding: '0 16px' }}
+                                onClick={() => handleUpdateStatus(selectedTrip.id, 'started')}
+                              >
+                                <Play size={16} />
+                                <span>Start Trip</span>
+                              </button>
+                            )}
+                            
+                            {selectedTrip.status === 'started' && (
+                              <button 
+                                className="btn btn-primary"
+                                style={{ display: 'flex', gap: '8px', alignItems: 'center', height: '42px', padding: '0 16px' }}
+                                onClick={() => handleUpdateStatus(selectedTrip.id, 'in_progress')}
+                              >
+                                <Play size={16} />
+                                <span>Set In Progress</span>
+                              </button>
+                            )}
+                            
+                            {selectedTrip.status === 'in_progress' && (
+                              <button 
+                                className="btn btn-primary"
+                                style={{ display: 'flex', gap: '8px', alignItems: 'center', height: '42px', padding: '0 16px' }}
+                                onClick={() => handleUpdateStatus(selectedTrip.id, 'completed')}
+                              >
+                                <CheckCircle2 size={16} />
+                                <span>Complete Trip</span>
+                              </button>
+                            )}
+
+                            {selectedTrip.status === 'payment_pending' && (
+                              <span style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                ⏱️ Awaiting passenger payment confirmation...
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          /* Passenger Controls & Pay Now button */
+                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                            {selectedTrip.status === 'payment_pending' ? (
+                              <button 
+                                className="btn btn-primary animate-pulse"
+                                style={{ height: '42px', padding: '0 24px', fontSize: '13px', fontWeight: '700' }}
+                                onClick={() => handlePayment(selectedTrip.id)}
+                              >
+                                PaY Now
+                              </button>
                             ) : (
                               <>
-                                <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>
-                                  {trip.driver?.name || 'Carpool Driver'}
-                                </h2>
-                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                                  {trip.ride?.pickupAddress} to {trip.ride?.destAddress}
-                                </div>
-                              </>
-                            )}
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                              {formatRideDate(trip.ride?.datetime)}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Route/Vehicle Details Grid */}
-                        <div style={{ 
-                          display: 'grid', 
-                          gridTemplateColumns: '1fr 1fr 1fr', 
-                          gap: '16px', 
-                          backgroundColor: 'rgba(11, 15, 25, 0.4)', 
-                          padding: '20px', 
-                          borderRadius: 'var(--radius-md)',
-                          border: '1px solid var(--border-color)' 
-                        }}>
-                          {/* Vehicle Column */}
-                          <div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Vehicle</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                              <Car size={18} className="brand-logo" />
-                              <div>
-                                <div style={{ fontSize: '14px', fontWeight: '600' }}>{trip.vehicle?.model || 'Swift Dzire'}</div>
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{trip.vehicle?.registrationNumber || 'GJ01AB1234'}</div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Pick Up Point Column */}
-                          <div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Pick UP Point</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                              <MapPin size={18} style={{ color: '#3b82f6' }} />
-                              <div style={{ fontSize: '14px', fontWeight: '600' }}>{trip.ride?.pickupAddress || 'Iskcon'}</div>
-                            </div>
-                          </div>
-
-                          {/* Drop Point Column */}
-                          <div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Drop Point</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                              <MapPin size={18} style={{ color: 'var(--color-brand)' }} />
-                              <div style={{ fontSize: '14px', fontWeight: '600' }}>{trip.ride?.destAddress || 'Infocity'}</div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Communication and Price bar */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
-                          
-                          {/* Buttons group (only shown for passengers communicating with drivers) */}
-                          <div style={{ display: 'flex', gap: '12px' }}>
-                            {!isDriver ? (
-                              <>
-                                <button className="btn btn-secondary" style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}>
+                                <button 
+                                  className="btn btn-secondary" 
+                                  style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}
+                                  onClick={focusChatInput}
+                                >
                                   <MessageSquare size={16} />
-                                  <span>Chat with Driver</span>
+                                  <span>Chat</span>
                                 </button>
-                                <button className="btn btn-secondary" style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}>
+                                <button 
+                                  className="btn btn-secondary" 
+                                  style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}
+                                  onClick={() => setCallingUser(selectedTrip.driver?.name || 'Carpool Driver')}
+                                >
                                   <Phone size={16} />
-                                  <span>Call To Driver</span>
+                                  <span>Call</span>
                                 </button>
                                 <button 
                                   className="btn btn-primary" 
                                   style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}
                                   onClick={() => onNavigate('track-ride', {
-                                    pickupLocation: trip.ride?.pickupAddress,
-                                    destination: trip.ride?.destAddress,
-                                    driverName: trip.driver?.name,
-                                    vehicleName: trip.vehicle?.model,
-                                    vehicleReg: trip.vehicle?.registrationNumber
+                                    pickupLocation: selectedTrip.ride?.pickupAddress,
+                                    destination: selectedTrip.ride?.destAddress,
+                                    driverName: selectedTrip.driver?.name,
+                                    vehicleName: selectedTrip.vehicle?.model,
+                                    vehicleReg: selectedTrip.vehicle?.registrationNumber
                                   })}
                                 >
                                   <Navigation size={16} />
                                   <span>Track Ride</span>
                                 </button>
                               </>
-                            ) : (
-                              <div style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <Check size={16} style={{ color: 'var(--color-brand)' }} />
-                                <span>You are driving this route. Keep navigation logs open.</span>
-                              </div>
                             )}
                           </div>
+                        )}
 
-                          {/* Fare group */}
-                          <div style={{ textAlign: 'right' }}>
-                            <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                              ₹ {trip.fare}
-                            </span>
-                            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                              {isDriver ? ' earned' : ' total'}
-                            </span>
-                          </div>
+                        {/* Driver Calling button (if driver wants to call the passenger) */}
+                        {selectedTrip.driverId === user?.id && selectedTrip.passengers?.length > 0 && (
+                          <button 
+                            className="btn btn-secondary" 
+                            style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}
+                            onClick={() => setCallingUser(selectedTrip.passengers[0].user?.name || 'Passenger')}
+                          >
+                            <Phone size={16} />
+                            <span>Call Passenger</span>
+                          </button>
+                        )}
 
+                        {/* Fare details */}
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '24px', fontWeight: '800', color: 'var(--text-primary)' }}>
+                            ₹ {selectedTrip.fare}
+                          </span>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                            {selectedTrip.driverId === user?.id ? ' earnings' : ' fare'}
+                          </span>
                         </div>
 
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+
+                    {/* Chat Panel Card (Screen 13 Bubble Layout matching) */}
+                    {selectedTrip.status !== 'payment_pending' && selectedTrip.status !== 'payment_completed' && (
+                      <div style={{ 
+                        backgroundColor: 'var(--bg-input)', 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: 'var(--radius-lg)', 
+                        padding: '24px', 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '16px',
+                        boxShadow: 'var(--shadow-sm)'
+                      }}>
+                        <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>
+                            Trip Chat
+                          </h3>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ width: '6px', height: '6px', backgroundColor: 'var(--color-brand)', borderRadius: '50%' }}></span>
+                            <span>Connected</span>
+                          </span>
+                        </div>
+
+                        {/* Message list bubble container */}
+                        <div style={{ 
+                          height: '240px', 
+                          overflowY: 'auto', 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          gap: '12px', 
+                          paddingRight: '8px'
+                        }}>
+                          {chatMessages.length === 0 ? (
+                            <div style={{ 
+                              margin: 'auto', 
+                              textAlign: 'center', 
+                              color: 'var(--text-muted)', 
+                              fontSize: '12px',
+                              padding: '20px'
+                            }}>
+                              No messages yet. Send a note to coordinate departure!
+                            </div>
+                          ) : (
+                            chatMessages.map((msg, index) => {
+                              const isOwn = msg.senderId === user?.id;
+                              return (
+                                <div 
+                                  key={msg.id || index}
+                                  style={{ 
+                                    display: 'flex', 
+                                    flexDirection: 'column',
+                                    alignItems: isOwn ? 'flex-end' : 'flex-start',
+                                    maxWidth: '80%',
+                                    alignSelf: isOwn ? 'flex-end' : 'flex-start'
+                                  }}
+                                >
+                                  {/* Bubble content */}
+                                  <div style={{ 
+                                    padding: '10px 14px', 
+                                    borderRadius: '16px', 
+                                    borderTopRightRadius: isOwn ? '2px' : '16px',
+                                    borderTopLeftRadius: isOwn ? '16px' : '2px',
+                                    fontSize: '13px', 
+                                    lineHeight: '1.4',
+                                    backgroundColor: isOwn ? 'var(--color-brand)' : 'var(--bg-card)', 
+                                    color: isOwn ? '#fff' : 'var(--text-primary)',
+                                    border: isOwn ? 'none' : '1px solid var(--border-color)',
+                                    wordBreak: 'break-word'
+                                  }}>
+                                    {msg.text}
+                                  </div>
+                                  {/* Sender metadata / timestamp */}
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', padding: '0 4px' }}>
+                                    {!isOwn && `${msg.sender?.name || 'User'} • `}
+                                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              );
+                            })
+                          )}
+                          <div ref={messagesEndRef} />
+                        </div>
+
+                        {/* Input bar */}
+                        <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                          <input 
+                            type="text"
+                            className="input-field"
+                            style={{ flex: 1, paddingLeft: '16px', height: '42px', fontSize: '13px' }}
+                            placeholder="Type your message here..."
+                            value={typedMessage}
+                            onChange={(e) => setTypedMessage(e.target.value)}
+                            ref={chatInputRef}
+                          />
+                          <button 
+                            type="submit" 
+                            className="btn btn-primary"
+                            style={{ width: '42px', height: '42px', padding: 0, borderRadius: '50%', justifyContent: 'center' }}
+                            disabled={!typedMessage.trim()}
+                          >
+                            <Send size={16} />
+                          </button>
+                        </form>
+
+                      </div>
+                    )}
+
+                  </div>
+                </>
+              ) : (
+                /* Scenario 2: Active Trips List (Screen 11 Card Listing) */
+                <>
+                  <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '16px' }}>My Active Trips</h2>
+
+                  {isLoadingData && activeTrips.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px' }}>
+                      <Loader2 className="animate-spin" size={28} style={{ margin: '0 auto' }} />
+                    </div>
+                  ) : activeTrips.length === 0 ? (
+                    <div style={{ 
+                      textAlign: 'center', 
+                      padding: '48px 24px', 
+                      backgroundColor: 'var(--bg-input)', 
+                      border: '1px dashed var(--border-color)', 
+                      borderRadius: '12px',
+                      color: 'var(--text-secondary)'
+                    }}>
+                      No upcoming active trips scheduled. Search rides to book a seat, or offer a ride to publish an route!
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {activeTrips.map((trip) => {
+                        const isDriver = trip.driverId === user?.id;
+                        return (
+                          <div 
+                            key={trip.id}
+                            className="ride-card-hover"
+                            onClick={() => setSelectedTrip(trip)}
+                            style={{ 
+                              backgroundColor: 'var(--bg-input)', 
+                              border: '1px solid var(--border-color)', 
+                              borderRadius: 'var(--radius-md)', 
+                              padding: '20px', 
+                              cursor: 'pointer',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                              <div style={{ 
+                                width: '42px', 
+                                height: '42px', 
+                                borderRadius: '50%', 
+                                backgroundColor: 'var(--bg-card)', 
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'var(--text-secondary)'
+                              }}>
+                                <Users size={20} />
+                              </div>
+                              <div>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <span style={{ 
+                                    fontSize: '10px', 
+                                    fontWeight: '700', 
+                                    padding: '2px 6px', 
+                                    borderRadius: '3px',
+                                    backgroundColor: isDriver ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                                    color: isDriver ? 'var(--color-brand)' : '#3b82f6'
+                                  }}>
+                                    {isDriver ? 'Driver' : 'Passenger'}
+                                  </span>
+                                  <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>
+                                    {trip.ride?.pickupAddress} to {trip.ride?.destAddress}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                  {formatRideDate(trip.ride?.datetime)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                              <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+                                {getStatusBadge(trip.status)}
+                                <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                  ₹ {trip.fare}
+                                </div>
+                              </div>
+                              <ArrowRight size={18} style={{ color: 'var(--text-muted)' }} />
+                            </div>
+
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
               )}
 
             </div>
@@ -814,7 +1291,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>Registered Vehicles</h2>
                   
-                  {isLoadingData ? (
+                  {isLoadingData && userVehicles.length === 0 ? (
                     <Loader2 className="animate-spin" size={24} style={{ margin: '20px auto' }} />
                   ) : userVehicles.length === 0 ? (
                     <div style={{ 
@@ -959,7 +1436,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
               <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '16px' }}>Ride History</h2>
               
-              {isLoadingData ? (
+              {isLoadingData && historyTrips.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px' }}>
                   <Loader2 className="animate-spin" size={28} style={{ margin: '0 auto' }} />
                 </div>
@@ -1053,6 +1530,86 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
         </main>
       </div>
+
+      {/* Simulated Calling Modal overlay */}
+      {callingUser && (
+        <div style={{ 
+          position: 'fixed', 
+          top: 0, 
+          left: 0, 
+          width: '100%', 
+          height: '100%', 
+          backgroundColor: 'rgba(5, 8, 15, 0.9)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          zIndex: 9999,
+          backdropFilter: 'blur(8px)'
+        }}>
+          <div style={{ 
+            backgroundColor: 'var(--bg-input)', 
+            border: '1px solid var(--border-color)', 
+            borderRadius: '24px', 
+            width: '320px', 
+            padding: '40px 24px', 
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '24px',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)'
+          }}>
+            {/* Pulsing avatar */}
+            <div className="calling-avatar-ring">
+              <div style={{ 
+                width: '80px', 
+                height: '80px', 
+                borderRadius: '50%', 
+                backgroundColor: 'rgba(16, 185, 129, 0.1)', 
+                border: '2px solid var(--color-brand)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--color-brand)'
+              }}>
+                <Users size={36} />
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: '700' }}>
+                Calling...
+              </span>
+              <h3 style={{ fontSize: '20px', fontWeight: '600', color: 'var(--text-primary)', margin: '8px 0 0 0' }}>
+                {callingUser}
+              </h3>
+            </div>
+
+            {/* End Call red button */}
+            <button 
+              className="btn" 
+              onClick={() => setCallingUser(null)}
+              style={{ 
+                width: '56px', 
+                height: '56px', 
+                borderRadius: '50%', 
+                backgroundColor: '#ef4444', 
+                color: '#fff', 
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 8px 24px rgba(239, 68, 68, 0.4)'
+              }}
+            >
+              <PhoneOff size={24} />
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

@@ -118,4 +118,30 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/trips/:id/messages
+// Fetch persistent chat history for a specific trip
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/:id/messages', requireAuth, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const messages = await withRetry(() =>
+      prisma.message.findMany({
+        where: { tripId: id },
+        include: {
+          sender: {
+            select: { id: true, name: true, photoUrl: true }
+          }
+        },
+        orderBy: { createdAt: 'asc' }
+      })
+    );
+    return res.status(200).json(messages);
+  } catch (err) {
+    console.error('[getTripMessages]', err);
+    return res.status(500).json({ message: 'Failed to fetch trip messages.' });
+  }
+});
+
 module.exports = router;
