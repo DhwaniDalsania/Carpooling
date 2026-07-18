@@ -1,0 +1,224 @@
+// This is your Prisma schema file — source of truth for DB structure.
+// Run `npx prisma migrate dev --name <name>` after any change.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")  // Non-pooled — required for DDL (migrations)
+}
+
+// ─── Core Entities ───────────────────────────────────────────────────────────
+
+model Organization {
+  id                String   @id @default(cuid())
+  name              String
+  registeredAddress String
+  industry          String
+  adminContact      String
+  code              String   @unique  // Invite code employees use to join
+  fuelCostPerLitre  Float    @default(0)
+  costPerKm         Float    @default(0)
+  travelCostPerKm   Float    @default(0)
+  createdAt         DateTime @default(now())
+
+  users             User[]
+}
+
+model User {
+  id              String       @id @default(cuid())
+  name            String
+  email           String       @unique
+  passwordHash    String
+  role            Role         @default(employee)
+  organizationId  String
+  photoUrl        String?
+  department      String?
+  managerName     String?
+  location        String?
+  platformAccess  Boolean      @default(true)  // Admin can revoke without deleting account
+  createdAt       DateTime     @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  vehicles        Vehicle[]
+  ridesAsDriver   Ride[]       @relation("DriverRides")
+  bookings        Booking[]
+  tripsAsDriver   Trip[]       @relation("DriverTrips")
+  tripPassengers  TripPassenger[]
+  wallet          Wallet?
+  transactions    Transaction[]
+  messages        Message[]
+}
+
+enum Role {
+  employee
+  admin
+}
+
+// ─── Vehicle ─────────────────────────────────────────────────────────────────
+
+model Vehicle {
+  id                 String        @id @default(cuid())
+  userId             String
+  model              String
+  registrationNumber String        @unique
+  seatingCapacity    Int
+  status             VehicleStatus @default(active)
+  createdAt          DateTime      @default(now())
+
+  user               User          @relation(fields: [userId], references: [id])
+  rides              Ride[]
+  trips              Trip[]
+}
+
+enum VehicleStatus {
+  active
+  inactive
+}
+
+// ─── Ride (offer posted by a driver) ─────────────────────────────────────────
+
+model Ride {
+  id             String      @id @default(cuid())
+  driverId       String
+  vehicleId      String
+  pickupAddress  String
+  pickupLat      Float
+  pickupLng      Float
+  destAddress    String
+  destLat        Float
+  destLng        Float
+  datetime       DateTime
+  availableSeats Int
+  farePerSeat    Float
+  routeGeoJson   Json?       // Stored OSRM geometry
+  distanceKm     Float?
+  status         RideStatus  @default(active)
+  createdAt      DateTime    @default(now())
+
+  driver         User        @relation("DriverRides", fields: [driverId], references: [id])
+  vehicle        Vehicle     @relation(fields: [vehicleId], references: [id])
+  bookings       Booking[]
+  trips          Trip[]
+}
+
+enum RideStatus {
+  active
+  full
+  cancelled
+  completed
+}
+
+// ─── Booking (passenger reserves a seat) ─────────────────────────────────────
+
+model Booking {
+  id          String        @id @default(cuid())
+  rideId      String
+  passengerId String
+  seatsBooked Int           @default(1)
+  status      BookingStatus @default(pending)
+  createdAt   DateTime      @default(now())
+
+  ride        Ride          @relation(fields: [rideId], references: [id])
+  passenger   User          @relation(fields: [passengerId], references: [id])
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  cancelled
+}
+
+// ─── Trip (active/completed ride session) ────────────────────────────────────
+
+model Trip {
+  id          String      @id @default(cuid())
+  rideId      String
+  driverId    String
+  vehicleId   String
+  status      TripStatus  @default(booked)
+  fare        Float       @default(0)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime    @default(now())
+
+  ride        Ride        @relation(fields: [rideId], references: [id])
+  driver      User        @relation("DriverTrips", fields: [driverId], references: [id])
+  vehicle     Vehicle     @relation(fields: [vehicleId], references: [id])
+  passengers  TripPassenger[]
+  transactions Transaction[]
+  messages    Message[]
+}
+
+enum TripStatus {
+  booked
+  started
+  in_progress
+  completed
+  payment_pending
+  payment_completed
+}
+
+// Join table: many passengers per trip
+model TripPassenger {
+  tripId  String
+  userId  String
+
+  trip    Trip   @relation(fields: [tripId], references: [id])
+  user    User   @relation(fields: [userId], references: [id])
+
+  @@id([tripId, userId])
+}
+
+// ─── Wallet & Transactions ────────────────────────────────────────────────────
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Float    @default(0)
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Transaction {
+  id        String            @id @default(cuid())
+  userId    String
+  tripId    String?
+  amount    Float
+  type      TransactionType
+  method    String            // "wallet" | "razorpay" | "simulated"
+  status    TransactionStatus @default(pending)
+  createdAt DateTime          @default(now())
+
+  user      User              @relation(fields: [userId], references: [id])
+  trip      Trip?             @relation(fields: [tripId], references: [id])
+}
+
+enum TransactionType {
+  payment
+  recharge
+  refund
+}
+
+enum TransactionStatus {
+  pending
+  completed
+  failed
+}
+
+// ─── Chat Messages ────────────────────────────────────────────────────────────
+
+model Message {
+  id        String   @id @default(cuid())
+  tripId    String
+  senderId  String
+  text      String
+  createdAt DateTime @default(now())
+
+  trip      Trip     @relation(fields: [tripId], references: [id])
+  sender    User     @relation(fields: [senderId], references: [id])
+}

@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { setupMockApi } from './utils/mockApi';
+// Mock API disabled — real Express backend handles /api/* (via Vite proxy)
+// import { setupMockApi } from './utils/mockApi';
 import Splash from './components/Splash';
 import Login from './components/Login';
 import SignUp from './components/SignUp';
 import Dashboard from './components/Dashboard';
 import ProfileModal from './components/ProfileModal';
 
-// Initialize the mock API interceptor to catch POST /api/auth/login, etc.
-setupMockApi();
+
+
 
 function MainAppContent() {
   const { user } = useAuth();
