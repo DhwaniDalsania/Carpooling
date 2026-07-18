@@ -48,7 +48,7 @@ chatNs.on('connection', (socket) => {
   });
 
   // message payload: { tripId, senderId, text }
-  socket.on('message:send', async (data) => {
+  socket.on('message:send', async (data, acknowledge) => {
     try {
       const { prisma, withRetry } = require('./lib/prisma');
       const savedMsg = await withRetry(() =>
@@ -67,8 +67,10 @@ chatNs.on('connection', (socket) => {
       );
       chatNs.to(`trip:${data.tripId}`).emit('message:new', savedMsg);
       chatNs.to(`trip:${data.tripId}`).emit('message:receive', savedMsg);
+      acknowledge?.({ ok: true, message: savedMsg });
     } catch (err) {
       console.error('[Socket Chat Save Error]', err);
+      acknowledge?.({ ok: false, error: 'Failed to send message.' });
     }
   });
 

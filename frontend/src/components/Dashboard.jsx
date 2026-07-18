@@ -859,6 +859,15 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       tripId: selectedTrip.id,
       senderId: user.id,
       text: typedMessage.trim()
+    }, (result) => {
+      if (!result?.ok) {
+        console.error(result?.error || 'Failed to send message.');
+        return;
+      }
+      setChatMessages((prev) => {
+        if (prev.some((message) => message.id === result.message.id)) return prev;
+        return [...prev, result.message];
+      });
     });
 
     setTypedMessage('');
