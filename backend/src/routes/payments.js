@@ -19,9 +19,29 @@ router.post('/create-order', requireAuth, async (req, res) => {
   }
 
   try {
-    const trip = await withRetry(() => prisma.trip.findUnique({ where: { id: tripId } }));
+    const trip = await withRetry(() =>
+      prisma.trip.findUnique({
+        where: { id: tripId },
+        include: { passengers: true }
+      })
+    );
     if (!trip) {
       return res.status(404).json({ message: 'Trip not found.' });
+    }
+
+    if (trip.status !== 'payment_pending') {
+      return res.status(400).json({ message: `Trip is not pending payment (status: ${trip.status}).` });
+    }
+
+    // Verify user is passenger on the trip
+    const isPassenger = trip.passengers.some((p) => p.userId === req.user.id);
+    if (!isPassenger) {
+      return res.status(403).json({ message: 'Only passengers on this trip can make a payment.' });
+    }
+
+    // Driver cannot pay for their own trip
+    if (trip.driverId === req.user.id) {
+      return res.status(403).json({ message: 'Driver cannot pay for their own trip.' });
     }
 
     const keyId = process.env.RAZORPAY_KEY_ID;
@@ -99,6 +119,21 @@ router.post('/verify', requireAuth, async (req, res) => {
 
     if (!trip) {
       return res.status(404).json({ message: 'Trip not found.' });
+    }
+
+    if (trip.status !== 'payment_pending') {
+      return res.status(400).json({ message: `Trip is not pending payment (status: ${trip.status}).` });
+    }
+
+    // Verify user is passenger on the trip
+    const isPassenger = trip.passengers.some((p) => p.userId === req.user.id);
+    if (!isPassenger) {
+      return res.status(403).json({ message: 'Only passengers on this trip can make a payment.' });
+    }
+
+    // Driver cannot pay for their own trip
+    if (trip.driverId === req.user.id) {
+      return res.status(403).json({ message: 'Driver cannot pay for their own trip.' });
     }
 
     const keyId = process.env.RAZORPAY_KEY_ID;
@@ -194,6 +229,17 @@ router.post('/simulate', requireAuth, async (req, res) => {
 
     if (trip.status !== 'payment_pending') {
       return res.status(400).json({ message: `Trip is not pending payment (status: ${trip.status}).` });
+    }
+
+    // Verify user is passenger on the trip
+    const isPassenger = trip.passengers.some((p) => p.userId === req.user.id);
+    if (!isPassenger) {
+      return res.status(403).json({ message: 'Only passengers on this trip can make a payment.' });
+    }
+
+    // Driver cannot pay for their own trip
+    if (trip.driverId === req.user.id) {
+      return res.status(403).json({ message: 'Driver cannot pay for their own trip.' });
     }
 
     // Artificial gateway delay (1.5s) to simulate processing

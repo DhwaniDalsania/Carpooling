@@ -631,7 +631,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
     if (paymentMethod === 'wallet') {
       if (walletBalance < selectedTrip.fare) {
-        alert('Insufficient wallet balance. Please select another method or recharge your wallet.');
+        alert('Insufficient wallet balance. Please recharge your wallet.');
         return;
       }
       setIsLoadingData(true);
@@ -654,38 +654,6 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
         });
         setActivePaymentMode('success');
         await fetchWalletData();
-        await fetchTrips();
-      } catch (err) {
-        alert(err.message);
-      } finally {
-        setIsLoadingData(false);
-      }
-    } else if (paymentMethod === 'cash') {
-      setIsLoadingData(true);
-      try {
-        const res = await fetch('/api/payments/verify', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            tripId: selectedTrip.id,
-            razorpay_order_id: 'order_mock_cash',
-            razorpay_payment_id: 'pay_mock_cash',
-            razorpay_signature: 'sig_mock',
-            method: 'cash'
-          })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || 'Failed to complete cash transaction.');
-
-        setPaymentSuccessData({
-          method: 'Cash Payment',
-          amount: selectedTrip.fare,
-          orderId: 'CASH_' + Math.random().toString(36).substring(5).toUpperCase()
-        });
-        setActivePaymentMode('success');
         await fetchTrips();
       } catch (err) {
         alert(err.message);
@@ -1609,110 +1577,127 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '32px' }}>
                     
-                    {/* Method list selector */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {/* Left Column: Trip Details & Method list selector */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                       
-                      {/* Cash Card */}
-                      <label style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'space-between',
-                        padding: '16px 20px', 
-                        borderRadius: 'var(--radius-md)', 
+                      {/* Trip Details display */}
+                      <div style={{ 
                         backgroundColor: 'var(--bg-input)', 
-                        border: `1px solid ${paymentMethod === 'cash' ? 'var(--color-brand)' : 'var(--border-color)'}`,
-                        cursor: 'pointer',
-                        transition: 'border 0.2s'
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: 'var(--radius-lg)', 
+                        padding: '20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
                       }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-primary)' }}>
-                          <input 
-                            type="radio" 
-                            name="payment" 
-                            checked={paymentMethod === 'cash'} 
-                            onChange={() => setPaymentMethod('cash')} 
-                            style={{ accentColor: 'var(--color-brand)' }}
-                          />
-                          <span style={{ fontSize: '14px', fontWeight: '600' }}>Cash</span>
+                        <h3 style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>
+                          Trip Information
+                        </h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px' }}>
+                          <div>
+                            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '10px', fontWeight: '500', marginBottom: '2px' }}>Driver</span>
+                            <strong style={{ color: 'var(--text-primary)' }}>{selectedTrip.driver?.name || 'Carpool Driver'}</strong>
+                          </div>
+                          <div>
+                            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '10px', fontWeight: '500', marginBottom: '2px' }}>Vehicle</span>
+                            <strong style={{ color: 'var(--text-primary)' }}>{selectedTrip.vehicle ? `${selectedTrip.vehicle.model} (${selectedTrip.vehicle.registrationNumber})` : 'N/A'}</strong>
+                          </div>
+                          <div style={{ gridColumn: 'span 2' }}>
+                            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '10px', fontWeight: '500', marginBottom: '2px' }}>Route</span>
+                            <strong style={{ color: 'var(--text-primary)' }}>{selectedTrip.ride?.pickupAddress} to {selectedTrip.ride?.destAddress}</strong>
+                          </div>
+                          <div>
+                            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '10px', fontWeight: '500', marginBottom: '2px' }}>Distance</span>
+                            <strong style={{ color: 'var(--text-primary)' }}>{selectedTrip.ride?.distanceKm ? `${selectedTrip.ride.distanceKm} km` : 'N/A'}</strong>
+                          </div>
+                          <div>
+                            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '10px', fontWeight: '500', marginBottom: '2px' }}>Fare</span>
+                            <strong style={{ color: 'var(--text-primary)' }}>₹ {selectedTrip.fare}</strong>
+                          </div>
                         </div>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Pay in person</span>
-                      </label>
+                      </div>
 
-                      {/* Card option */}
-                      <label style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'space-between',
-                        padding: '16px 20px', 
-                        borderRadius: 'var(--radius-md)', 
-                        backgroundColor: 'var(--bg-input)', 
-                        border: `1px solid ${paymentMethod === 'card' ? 'var(--color-brand)' : 'var(--border-color)'}`,
-                        cursor: 'pointer',
-                        transition: 'border 0.2s'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-primary)' }}>
-                          <input 
-                            type="radio" 
-                            name="payment" 
-                            checked={paymentMethod === 'card'} 
-                            onChange={() => setPaymentMethod('card')} 
-                            style={{ accentColor: 'var(--color-brand)' }}
-                          />
-                          <span style={{ fontSize: '14px', fontWeight: '600' }}>Card</span>
-                        </div>
-                        <CreditCard size={18} style={{ color: 'var(--text-secondary)' }} />
-                      </label>
+                      {/* Payment Methods */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        
+                        {/* Card option */}
+                        <label style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between',
+                          padding: '16px 20px', 
+                          borderRadius: 'var(--radius-md)', 
+                          backgroundColor: 'var(--bg-input)', 
+                          border: `1px solid ${paymentMethod === 'card' ? 'var(--color-brand)' : 'var(--border-color)'}`,
+                          cursor: 'pointer',
+                          transition: 'border 0.2s'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-primary)' }}>
+                            <input 
+                              type="radio" 
+                              name="payment" 
+                              checked={paymentMethod === 'card'} 
+                              onChange={() => setPaymentMethod('card')} 
+                              style={{ accentColor: 'var(--color-brand)' }}
+                            />
+                            <span style={{ fontSize: '14px', fontWeight: '600' }}>Card</span>
+                          </div>
+                          <CreditCard size={18} style={{ color: 'var(--text-secondary)' }} />
+                        </label>
 
-                      {/* UPI Option */}
-                      <label style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'space-between',
-                        padding: '16px 20px', 
-                        borderRadius: 'var(--radius-md)', 
-                        backgroundColor: 'var(--bg-input)', 
-                        border: `1px solid ${paymentMethod === 'upi' ? 'var(--color-brand)' : 'var(--border-color)'}`,
-                        cursor: 'pointer',
-                        transition: 'border 0.2s'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-primary)' }}>
-                          <input 
-                            type="radio" 
-                            name="payment" 
-                            checked={paymentMethod === 'upi'} 
-                            onChange={() => setPaymentMethod('upi')} 
-                            style={{ accentColor: 'var(--color-brand)' }}
-                          />
-                          <span style={{ fontSize: '14px', fontWeight: '600' }}>UPI</span>
-                        </div>
-                        <Smartphone size={18} style={{ color: 'var(--text-secondary)' }} />
-                      </label>
+                        {/* UPI Option */}
+                        <label style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between',
+                          padding: '16px 20px', 
+                          borderRadius: 'var(--radius-md)', 
+                          backgroundColor: 'var(--bg-input)', 
+                          border: `1px solid ${paymentMethod === 'upi' ? 'var(--color-brand)' : 'var(--border-color)'}`,
+                          cursor: 'pointer',
+                          transition: 'border 0.2s'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-primary)' }}>
+                            <input 
+                              type="radio" 
+                              name="payment" 
+                              checked={paymentMethod === 'upi'} 
+                              onChange={() => setPaymentMethod('upi')} 
+                              style={{ accentColor: 'var(--color-brand)' }}
+                            />
+                            <span style={{ fontSize: '14px', fontWeight: '600' }}>UPI</span>
+                          </div>
+                          <Smartphone size={18} style={{ color: 'var(--text-secondary)' }} />
+                        </label>
 
-                      {/* Wallet Option */}
-                      <label style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'space-between',
-                        padding: '16px 20px', 
-                        borderRadius: 'var(--radius-md)', 
-                        backgroundColor: 'var(--bg-input)', 
-                        border: `1px solid ${paymentMethod === 'wallet' ? 'var(--color-brand)' : 'var(--border-color)'}`,
-                        cursor: 'pointer',
-                        transition: 'border 0.2s'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-primary)' }}>
-                          <input 
-                            type="radio" 
-                            name="payment" 
-                            checked={paymentMethod === 'wallet'} 
-                            onChange={() => setPaymentMethod('wallet')} 
-                            style={{ accentColor: 'var(--color-brand)' }}
-                          />
-                          <span style={{ fontSize: '14px', fontWeight: '600' }}>Carpool Wallet</span>
-                        </div>
-                        <span style={{ fontSize: '13px', color: 'var(--color-brand)', fontWeight: '700' }}>
-                          ₹ {walletBalance.toFixed(2)}
-                        </span>
-                      </label>
+                        {/* Wallet Option */}
+                        <label style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between',
+                          padding: '16px 20px', 
+                          borderRadius: 'var(--radius-md)', 
+                          backgroundColor: 'var(--bg-input)', 
+                          border: `1px solid ${paymentMethod === 'wallet' ? 'var(--color-brand)' : 'var(--border-color)'}`,
+                          cursor: 'pointer',
+                          transition: 'border 0.2s'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-primary)' }}>
+                            <input 
+                              type="radio" 
+                              name="payment" 
+                              checked={paymentMethod === 'wallet'} 
+                              onChange={() => setPaymentMethod('wallet')} 
+                              style={{ accentColor: 'var(--color-brand)' }}
+                            />
+                            <span style={{ fontSize: '14px', fontWeight: '600' }}>Carpool Wallet</span>
+                          </div>
+                          <span style={{ fontSize: '13px', color: 'var(--color-brand)', fontWeight: '700' }}>
+                            ₹ {walletBalance.toFixed(2)}
+                          </span>
+                        </label>
+
+                      </div>
 
                     </div>
 
@@ -1949,15 +1934,25 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                             ) : (
                               /* Passenger Controls & Pay Now button */
                               <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                                {selectedTrip.status === 'payment_pending' ? (
+                                {selectedTrip.status === 'payment_pending' && (
                                   <button 
                                     className="btn btn-primary animate-pulse"
                                     style={{ height: '42px', padding: '0 24px', fontSize: '13px', fontWeight: '700' }}
                                     onClick={() => handleStartPaymentFlow(selectedTrip)}
                                   >
-                                    PaY Now
+                                    Pay Now
                                   </button>
-                                ) : (
+                                )}
+                                {selectedTrip.status === 'payment_completed' && (
+                                  <button 
+                                    className="btn btn-secondary"
+                                    style={{ height: '42px', padding: '0 24px', fontSize: '13px', fontWeight: '700', cursor: 'not-allowed', opacity: 0.8 }}
+                                    disabled
+                                  >
+                                    ✅ Payment Completed
+                                  </button>
+                                )}
+                                {selectedTrip.status !== 'payment_pending' && selectedTrip.status !== 'payment_completed' && (
                                   <>
                                     <button 
                                       className="btn btn-secondary" 
@@ -2191,7 +2186,30 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                                       ₹ {trip.fare}
                                     </div>
                                   </div>
-                                  <ArrowRight size={18} style={{ color: 'var(--text-muted)' }} />
+                                  {!isDriver && trip.status === 'payment_pending' && (
+                                    <button
+                                      className="btn btn-primary"
+                                      style={{ height: '32px', padding: '0 12px', fontSize: '11px', fontWeight: '700' }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStartPaymentFlow(trip);
+                                      }}
+                                    >
+                                      Pay Now
+                                    </button>
+                                  )}
+                                  {!isDriver && trip.status === 'payment_completed' && (
+                                    <button
+                                      className="btn btn-secondary"
+                                      style={{ height: '32px', padding: '0 12px', fontSize: '11px', fontWeight: '700', cursor: 'not-allowed', opacity: 0.7 }}
+                                      disabled
+                                    >
+                                      ✅ Payment Completed
+                                    </button>
+                                  )}
+                                  {!(!isDriver && (trip.status === 'payment_pending' || trip.status === 'payment_completed')) && (
+                                    <ArrowRight size={18} style={{ color: 'var(--text-muted)' }} />
+                                  )}
                                 </div>
 
                               </div>
@@ -2749,211 +2767,346 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
               
               <button className="back-header" onClick={() => setCurrentHeaderTab('dashboard')} style={{ marginBottom: '16px' }}>
                 <ArrowLeft size={16} />
-                <span>Report</span>
+                <span>Reports & Analytics</span>
               </button>
 
               {reportSummary ? (
-                <>
-                  {/* Top Stat Cards row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px' }}>
-                    
-                    {/* Fuel Card */}
-                    <div style={{ 
-                      backgroundColor: 'var(--bg-input)', 
-                      border: '1px solid var(--border-color)', 
-                      borderRadius: 'var(--radius-lg)', 
-                      padding: '20px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      alignItems: 'center',
-                      textAlign: 'center'
-                    }}>
-                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>Total Fuel Cost</span>
-                      <strong style={{ fontSize: '24px', color: 'var(--color-brand)' }}>
-                        ₹ {reportSummary.monthlyTrends.reduce((acc, m) => acc + m.fuelCost, 0)}
-                      </strong>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                        Consumed: {reportSummary.monthlyTrends.reduce((acc, m) => acc + m.fuelConsumption, 0)} L
-                      </span>
-                    </div>
+                (() => {
+                  const hasNoData = (user?.role === 'admin' && reportSummary.totalCompletedRides === 0) || 
+                                    (user?.role !== 'admin' && reportSummary.totalRidesCompleted === 0);
 
-                    {/* Fleet ROI Card */}
-                    <div style={{ 
-                      backgroundColor: 'var(--bg-input)', 
-                      border: '1px solid var(--border-color)', 
-                      borderRadius: 'var(--radius-lg)', 
-                      padding: '20px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      alignItems: 'center',
-                      textAlign: 'center'
-                    }}>
-                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>Total Trips</span>
-                      <strong style={{ fontSize: '24px', color: '#3b82f6' }}>
-                        {reportSummary.totalTrips}
-                      </strong>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                        Completed active routes
-                      </span>
-                    </div>
-
-                    {/* Utilization Rate Card */}
-                    <div style={{ 
-                      backgroundColor: 'var(--bg-input)', 
-                      border: '1px solid var(--border-color)', 
-                      borderRadius: 'var(--radius-lg)', 
-                      padding: '20px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      alignItems: 'center',
-                      textAlign: 'center'
-                    }}>
-                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>Distance Travelled</span>
-                      <strong style={{ fontSize: '24px', color: '#06b6d4' }}>
-                        {reportSummary.totalDistance} km
-                      </strong>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                        Across all carpool paths
-                      </span>
-                    </div>
-
-                  </div>
-
-                  {/* Charts Grid */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '32px' }}>
-                    
-                    {/* Fuel Consumption Monthly Bar Chart */}
-                    <div style={{ 
-                      backgroundColor: 'var(--bg-input)', 
-                      border: '1px solid var(--border-color)', 
-                      borderRadius: 'var(--radius-lg)', 
-                      padding: '24px',
-                      height: '360px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px'
-                    }}>
-                      <h4 style={{ fontSize: '13px', color: 'var(--text-primary)', margin: 0, fontWeight: '600' }}>
-                        Fuel Consumption Trend (Litres/Month)
-                      </h4>
-                      <div style={{ width: '100%', height: '280px' }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportSummary.monthlyTrends}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                            <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={11} />
-                            <YAxis stroke="var(--text-muted)" fontSize={11} />
-                            <Tooltip 
-                              contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
-                              labelStyle={{ color: 'var(--text-primary)' }}
-                            />
-                            <Legend wrapperStyle={{ fontSize: '11px' }} />
-                            <Bar dataKey="fuelConsumption" name="Fuel Consumed (L)" fill="var(--color-brand)" radius={[4, 4, 0, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
+                  if (hasNoData) {
+                    return (
+                      <div style={{ 
+                        backgroundColor: 'var(--bg-input)', 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: 'var(--radius-lg)', 
+                        padding: '48px 32px',
+                        textAlign: 'center', 
+                        color: 'var(--text-muted)' 
+                      }}>
+                        <Activity size={48} style={{ color: 'var(--color-brand)', marginBottom: '16px' }} />
+                        <h3 style={{ color: 'var(--text-primary)', fontSize: '18px', fontWeight: '600' }}>No Report Data Available</h3>
+                        <p style={{ marginTop: '8px', fontSize: '13px' }}>
+                          No report data available yet. Complete your first ride to generate analytics.
+                        </p>
                       </div>
-                    </div>
+                    );
+                  }
 
-                    {/* Cost per km Bar Chart */}
-                    <div style={{ 
-                      backgroundColor: 'var(--bg-input)', 
-                      border: '1px solid var(--border-color)', 
-                      borderRadius: 'var(--radius-lg)', 
-                      padding: '24px',
-                      height: '360px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px'
-                    }}>
-                      <h4 style={{ fontSize: '13px', color: 'var(--text-primary)', margin: 0, fontWeight: '600' }}>
-                        Cost per Kilometer Trend (₹/km)
-                      </h4>
-                      <div style={{ width: '100%', height: '280px' }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportSummary.monthlyTrends}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                            <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={11} />
-                            <YAxis stroke="var(--text-muted)" fontSize={11} />
-                            <Tooltip 
-                              contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
-                              labelStyle={{ color: 'var(--text-primary)' }}
-                            />
-                            <Legend wrapperStyle={{ fontSize: '11px' }} />
-                            <Bar dataKey="costPerKm" name="Cost per km (₹)" fill="#06b6d4" radius={[4, 4, 0, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
+                  if (user?.role === 'admin') {
+                    return (
+                      <>
+                        {/* Admin Stats Grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                          
+                          {/* Fleet Overview */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>Fleet Overview</span>
+                            <strong style={{ fontSize: '20px', color: '#3b82f6' }}>{reportSummary.totalEmployees} Employees</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{reportSummary.totalVehicles} Registered Vehicles</span>
+                          </div>
 
-                  </div>
+                          {/* Ride Summary */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>Rides & Trips</span>
+                            <strong style={{ fontSize: '20px', color: 'var(--color-brand)' }}>{reportSummary.totalCompletedRides} Completed</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{reportSummary.totalRides} Offered ({reportSummary.activeRides} Active)</span>
+                          </div>
 
-                  {/* Financial Summary Table */}
-                  <div style={{ marginBottom: '32px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '16px' }}>
-                      Financial Summary of Month
-                    </h3>
-                    <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                        <thead>
-                          <tr style={{ backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-color)' }}>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Month</th>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Revenue (Fares)</th>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Fuel Cost</th>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Maintenance</th>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Net Profit</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {reportSummary.monthlyTrends.map((trend, idx) => (
-                            <tr key={idx} style={{ borderBottom: idx === reportSummary.monthlyTrends.length - 1 ? 'none' : '1px solid var(--border-color)' }}>
-                              <td style={{ padding: '12px 20px', fontWeight: '600', color: 'var(--text-primary)' }}>{trend.month}</td>
-                              <td style={{ padding: '12px 20px', color: 'var(--text-primary)' }}>₹ {trend.revenue}</td>
-                              <td style={{ padding: '12px 20px', color: '#ef4444' }}>₹ {trend.fuelCost}</td>
-                              <td style={{ padding: '12px 20px', color: 'var(--text-secondary)' }}>₹ {trend.maintenance}</td>
-                              <td style={{ padding: '12px 20px', color: 'var(--color-brand)', fontWeight: '700' }}>₹ {trend.netProfit}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                          {/* Cost & Revenue */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>Org Financials</span>
+                            <strong style={{ fontSize: '20px', color: '#06b6d4' }}>₹ {reportSummary.totalRevenue} Rev</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Cost: ₹ {reportSummary.totalTransportationCost} (Avg {reportSummary.avgRideDistance}km)</span>
+                          </div>
 
-                  {/* Vehicle-wise Cost Analysis Table */}
-                  <div>
-                    <h3 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '16px' }}>
-                      Vehicle-wise Cost Analysis
-                    </h3>
-                    <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                        <thead>
-                          <tr style={{ backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-color)' }}>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Vehicle</th>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Total Distance</th>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Completed Trips</th>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Fuel Cost</th>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Maintenance</th>
-                            <th style={{ padding: '12px 20px', color: 'var(--text-muted)' }}>Net Earnings</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {reportSummary.vehicleWiseAnalysis.map((vehicle, idx) => (
-                            <tr key={idx} style={{ borderBottom: idx === reportSummary.vehicleWiseAnalysis.length - 1 ? 'none' : '1px solid var(--border-color)' }}>
-                              <td style={{ padding: '12px 20px', fontWeight: '600', color: 'var(--text-primary)' }}>{vehicle.vehicle}</td>
-                              <td style={{ padding: '12px 20px', color: 'var(--text-primary)' }}>{vehicle.distance} km</td>
-                              <td style={{ padding: '12px 20px', color: 'var(--text-secondary)' }}>{vehicle.trips}</td>
-                              <td style={{ padding: '12px 20px', color: '#ef4444' }}>₹ {vehicle.fuelCost}</td>
-                              <td style={{ padding: '12px 20px', color: 'var(--text-secondary)' }}>₹ {vehicle.maintenance}</td>
-                              <td style={{ padding: '12px 20px', color: 'var(--color-brand)', fontWeight: '700' }}>₹ {vehicle.netProfit}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                          {/* Environmental Impact */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>Eco Savings</span>
+                            <strong style={{ fontSize: '20px', color: '#10b981' }}>{reportSummary.co2SavedKg} kg CO₂</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fuel saved: {reportSummary.fuelSavedLiters} L (₹ {reportSummary.fuelSavedValue})</span>
+                          </div>
 
-                </>
+                        </div>
+
+                        {/* Admin Charts Grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                          
+                          {/* Monthly Rides Count */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '20px', height: '320px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <h4 style={{ fontSize: '13px', color: 'var(--text-primary)', margin: 0, fontWeight: '600' }}>Monthly Completed Rides Count</h4>
+                            <div style={{ width: '100%', height: '250px' }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={reportSummary.monthlyTrends}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                  <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={11} />
+                                  <YAxis stroke="var(--text-muted)" fontSize={11} />
+                                  <Tooltip contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }} labelStyle={{ color: 'var(--text-primary)' }} />
+                                  <Legend wrapperStyle={{ fontSize: '11px' }} />
+                                  <Bar dataKey="count" name="Rides" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+
+                          {/* Monthly Revenue */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '20px', height: '320px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <h4 style={{ fontSize: '13px', color: 'var(--text-primary)', margin: 0, fontWeight: '600' }}>Monthly Organization Revenue (₹)</h4>
+                            <div style={{ width: '100%', height: '250px' }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={reportSummary.monthlyTrends}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                  <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={11} />
+                                  <YAxis stroke="var(--text-muted)" fontSize={11} />
+                                  <Tooltip contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }} labelStyle={{ color: 'var(--text-primary)' }} />
+                                  <Legend wrapperStyle={{ fontSize: '11px' }} />
+                                  <Bar dataKey="revenue" name="Revenue (₹)" fill="var(--color-brand)" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+
+                        </div>
+
+                        {/* Top Drivers & Passengers Tables */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                          
+                          {/* Active Drivers */}
+                          <div>
+                            <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '12px' }}>Most Active Drivers</h3>
+                            <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+                                <thead>
+                                  <tr style={{ backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-color)' }}>
+                                    <th style={{ padding: '10px 16px', color: 'var(--text-muted)' }}>Driver</th>
+                                    <th style={{ padding: '10px 16px', color: 'var(--text-muted)', textAlign: 'center' }}>Completed Trips</th>
+                                    <th style={{ padding: '10px 16px', color: 'var(--text-muted)', textAlign: 'right' }}>Total Distance</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {reportSummary.mostActiveDrivers.length === 0 ? (
+                                    <tr>
+                                      <td colSpan="3" style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)' }}>No drivers found.</td>
+                                    </tr>
+                                  ) : (
+                                    reportSummary.mostActiveDrivers.map((driver, idx) => (
+                                      <tr key={idx} style={{ borderBottom: idx === reportSummary.mostActiveDrivers.length - 1 ? 'none' : '1px solid var(--border-color)' }}>
+                                        <td style={{ padding: '10px 16px' }}>
+                                          <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{driver.name}</div>
+                                          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{driver.email}</div>
+                                        </td>
+                                        <td style={{ padding: '10px 16px', textAlign: 'center', color: 'var(--text-primary)' }}>{driver.count}</td>
+                                        <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--text-secondary)' }}>{Math.round(driver.distance)} km</td>
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                          {/* Active Passengers */}
+                          <div>
+                            <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '12px' }}>Most Active Passengers</h3>
+                            <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+                                <thead>
+                                  <tr style={{ backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-color)' }}>
+                                    <th style={{ padding: '10px 16px', color: 'var(--text-muted)' }}>Passenger</th>
+                                    <th style={{ padding: '10px 16px', color: 'var(--text-muted)', textAlign: 'center' }}>Completed Trips</th>
+                                    <th style={{ padding: '10px 16px', color: 'var(--text-muted)', textAlign: 'right' }}>Total Distance</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {reportSummary.mostActivePassengers.length === 0 ? (
+                                    <tr>
+                                      <td colSpan="3" style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)' }}>No passengers found.</td>
+                                    </tr>
+                                  ) : (
+                                    reportSummary.mostActivePassengers.map((passenger, idx) => (
+                                      <tr key={idx} style={{ borderBottom: idx === reportSummary.mostActivePassengers.length - 1 ? 'none' : '1px solid var(--border-color)' }}>
+                                        <td style={{ padding: '10px 16px' }}>
+                                          <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{passenger.name}</div>
+                                          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{passenger.email}</div>
+                                        </td>
+                                        <td style={{ padding: '10px 16px', textAlign: 'center', color: 'var(--text-primary)' }}>{passenger.count}</td>
+                                        <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--text-secondary)' }}>{Math.round(passenger.distance)} km</td>
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                        </div>
+
+                        {/* Vehicle Utilization Section */}
+                        <div style={{ marginBottom: '24px' }}>
+                          <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '12px' }}>Vehicle Utilization & Mileage Analysis</h3>
+                          <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+                              <thead>
+                                <tr style={{ backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-color)' }}>
+                                  <th style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>Vehicle Model</th>
+                                  <th style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>Total Distance</th>
+                                  <th style={{ padding: '12px 16px', color: 'var(--text-muted)', textAlign: 'center' }}>Completed Trips</th>
+                                  <th style={{ padding: '12px 16px', color: 'var(--text-muted)', textAlign: 'right' }}>Est. Fuel Cost</th>
+                                  <th style={{ padding: '12px 16px', color: 'var(--text-muted)', textAlign: 'right' }}>Est. Maintenance</th>
+                                  <th style={{ padding: '12px 16px', color: 'var(--text-muted)', textAlign: 'right' }}>Net Profit (Fares)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {reportSummary.vehicleUtilization.length === 0 ? (
+                                  <tr>
+                                    <td colSpan="6" style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)' }}>No vehicle usage registered.</td>
+                                  </tr>
+                                ) : (
+                                  reportSummary.vehicleUtilization.map((vehicle, idx) => (
+                                    <tr key={idx} style={{ borderBottom: idx === reportSummary.vehicleUtilization.length - 1 ? 'none' : '1px solid var(--border-color)' }}>
+                                      <td style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-primary)' }}>{vehicle.vehicle}</td>
+                                      <td style={{ padding: '12px 16px', color: 'var(--text-primary)' }}>{vehicle.distance} km</td>
+                                      <td style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>{vehicle.trips}</td>
+                                      <td style={{ padding: '12px 16px', textAlign: 'right', color: '#ef4444' }}>₹ {vehicle.fuelCost}</td>
+                                      <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--text-secondary)' }}>₹ {vehicle.maintenance}</td>
+                                      <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--color-brand)', fontWeight: '700' }}>₹ {vehicle.netProfit}</td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  } else {
+                    return (
+                      <>
+                        {/* Employee Stats Grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                          
+                          {/* Trips Summary */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>My Rides</span>
+                            <strong style={{ fontSize: '20px', color: '#3b82f6' }}>{reportSummary.totalRidesCompleted} Completed</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Offered: {reportSummary.totalRidesOffered} | Booked: {reportSummary.totalRidesBooked}</span>
+                          </div>
+
+                          {/* Wallet Transactions Summary */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>Personal Spending</span>
+                            <strong style={{ fontSize: '20px', color: '#ef4444' }}>₹ {reportSummary.totalAmountSpent} Spent</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Earned as Driver: ₹ {reportSummary.totalAmountEarned}</span>
+                          </div>
+
+                          {/* Eco Savings */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600' }}>My Carpool Savings</span>
+                            <strong style={{ fontSize: '20px', color: '#10b981' }}>{reportSummary.co2SavedKg} kg CO₂ Saved</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fuel saved: {reportSummary.fuelSavedLiters} L (₹ {reportSummary.fuelSavedValue} saved)</span>
+                          </div>
+
+                        </div>
+
+                        {/* Employee Charts Grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                          
+                          {/* Monthly Rides Count */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '20px', height: '320px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <h4 style={{ fontSize: '13px', color: 'var(--text-primary)', margin: 0, fontWeight: '600' }}>My Monthly Completed Rides</h4>
+                            <div style={{ width: '100%', height: '250px' }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={reportSummary.monthlyTrends}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                  <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={11} />
+                                  <YAxis stroke="var(--text-muted)" fontSize={11} />
+                                  <Tooltip contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }} labelStyle={{ color: 'var(--text-primary)' }} />
+                                  <Legend wrapperStyle={{ fontSize: '11px' }} />
+                                  <Bar dataKey="count" name="Rides" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+
+                          {/* Monthly Spending & Earnings */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '20px', height: '320px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <h4 style={{ fontSize: '13px', color: 'var(--text-primary)', margin: 0, fontWeight: '600' }}>Spending vs Earnings (₹)</h4>
+                            <div style={{ width: '100%', height: '250px' }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={reportSummary.monthlyTrends}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                  <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={11} />
+                                  <YAxis stroke="var(--text-muted)" fontSize={11} />
+                                  <Tooltip contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }} labelStyle={{ color: 'var(--text-primary)' }} />
+                                  <Legend wrapperStyle={{ fontSize: '11px' }} />
+                                  <Bar dataKey="spending" name="Spent (₹)" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                                  <Bar dataKey="earnings" name="Earned (₹)" fill="var(--color-brand)" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+
+                        </div>
+
+                        {/* Status Distribution & Wallet Summary Grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                          
+                          {/* Ride Status Distribution */}
+                          <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: '20px', height: '300px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <h4 style={{ fontSize: '13px', color: 'var(--text-primary)', margin: 0, fontWeight: '600' }}>Ride Status Distribution</h4>
+                            <div style={{ width: '100%', height: '230px' }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={reportSummary.statusDistribution}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                  <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={11} />
+                                  <YAxis stroke="var(--text-muted)" fontSize={11} />
+                                  <Tooltip contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }} labelStyle={{ color: 'var(--text-primary)' }} />
+                                  <Legend wrapperStyle={{ fontSize: '11px' }} />
+                                  <Bar dataKey="value" name="Count" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+
+                          {/* Wallet Transactions Summary */}
+                          <div>
+                            <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '12px' }}>Wallet Transaction Summary</h3>
+                            <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+                                <thead>
+                                  <tr style={{ backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-color)' }}>
+                                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>Transaction Type</th>
+                                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', textAlign: 'center' }}>Total Operations</th>
+                                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', textAlign: 'right' }}>Total Volume</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                    <td style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-primary)' }}>Completed Payments</td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>{reportSummary.walletSummary.paymentCount}</td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'right', color: '#ef4444', fontWeight: '700' }}>- ₹ {reportSummary.walletSummary.paymentSum}</td>
+                                  </tr>
+                                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                    <td style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-primary)' }}>Wallet Recharges</td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>{reportSummary.walletSummary.rechargeCount}</td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--color-brand)', fontWeight: '700' }}>+ ₹ {reportSummary.walletSummary.rechargeSum}</td>
+                                  </tr>
+                                  <tr style={{ borderBottom: 'none' }}>
+                                    <td style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-primary)' }}>Refunds Received</td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-secondary)' }}>{reportSummary.walletSummary.refundCount}</td>
+                                    <td style={{ padding: '12px 16px', textAlign: 'right', color: '#3b82f6', fontWeight: '700' }}>+ ₹ {reportSummary.walletSummary.refundSum}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                        </div>
+                      </>
+                    );
+                  }
+                })()
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   <SkeletonCard />

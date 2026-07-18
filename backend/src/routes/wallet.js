@@ -224,10 +224,15 @@ router.post('/pay', requireAuth, async (req, res) => {
       return res.status(403).json({ message: 'Only passengers on this trip can make a payment.' });
     }
 
+    // Driver cannot pay for their own trip
+    if (trip.driverId === req.user.id) {
+      return res.status(403).json({ message: 'Driver cannot pay for their own trip.' });
+    }
+
     // Verify wallet balance
     const wallet = await withRetry(() => prisma.wallet.findUnique({ where: { userId: req.user.id } }));
     if (!wallet || wallet.balance < trip.fare) {
-      return res.status(400).json({ message: 'Insufficient wallet balance.' });
+      return res.status(400).json({ message: 'Insufficient wallet balance. Please recharge your wallet.' });
     }
 
     // Deduct passenger, credit driver, record transactions (atomic transaction)
