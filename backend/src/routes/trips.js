@@ -19,8 +19,8 @@ router.get(['/', '/mine'], requireAuth, async (req, res) => {
   try {
     // History statuses vs Active statuses
     const statuses = showHistory
-      ? ['completed', 'payment_completed']
-      : ['booked', 'started', 'in_progress', 'payment_pending'];
+      ? ['completed', 'payment_completed', 'cancelled']
+      : ['booked', 'started', 'in_progress', 'payment_pending', 'cancelled'];
 
     const trips = await withRetry(() =>
       prisma.trip.findMany({

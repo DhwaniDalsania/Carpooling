@@ -97,6 +97,8 @@ app.use('/api/routes', require('./routes/routes'));
 app.use('/api/wallet', require('./routes/wallet'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/reports', require('./routes/reports'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/saved-places', require('./routes/saved-places'));
 // app.use('/api/reports',  require('./routes/reports'));
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────

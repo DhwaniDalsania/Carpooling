@@ -73,6 +73,8 @@ router.post('/', requireAuth, async (req, res) => {
           }
         })
       );
+    } else if (vehicle.status !== 'active') {
+      return res.status(400).json({ message: 'The selected vehicle has been deactivated or revoked by the administrator.' });
     }
 
     // Validate availableSeats <= vehicle.seatingCapacity
@@ -159,6 +161,9 @@ router.get('/search', async (req, res) => {
       datetime: {
         gte: startOfSearchDate,
         lte: endOfSearchDate
+      },
+      vehicle: {
+        status: 'active'
       }
     };
 
@@ -202,4 +207,140 @@ router.get('/search', async (req, res) => {
   }
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/rides/:id/bookings
+// Return all confirmed bookings for a given ride (for the requesting user only
+// unless they are the driver, who sees all bookings)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/:id/bookings', requireAuth, async (req, res) => {
+  const { id: rideId } = req.params;
+  try {
+    const ride = await withRetry(() => prisma.ride.findUnique({ where: { id: rideId } }));
+    if (!ride) return res.status(404).json({ message: 'Ride not found.' });
+
+    const isDriver = ride.driverId === req.user.id;
+
+    const bookings = await withRetry(() =>
+      prisma.booking.findMany({
+        where: {
+          rideId,
+          ...(isDriver ? {} : { passengerId: req.user.id })
+        },
+        include: { passenger: { select: { id: true, name: true, email: true } } },
+        orderBy: { createdAt: 'asc' }
+      })
+    );
+
+    return res.status(200).json(bookings);
+  } catch (err) {
+    console.error('[getRideBookings]', err);
+    return res.status(500).json({ message: 'Failed to fetch bookings.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/rides/:id/cancel
+// Driver cancels their entire ride offer (only when status is 'active' or 'full')
+// - Marks ride as 'cancelled'
+// - Cancels all associated bookings
+// - Cancels the trip(s) for this ride
+// - Restores each passenger's wallet balance (full refund) if they paid via wallet
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/:id/cancel', requireAuth, async (req, res) => {
+  const { id: rideId } = req.params;
+
+  try {
+    const ride = await withRetry(() =>
+      prisma.ride.findUnique({
+        where: { id: rideId },
+        include: {
+          bookings: {
+            where: { status: 'confirmed' },
+            include: { passenger: true }
+          },
+          trips: {
+            where: { status: { in: ['booked', 'started'] } },
+            include: {
+              passengers: { include: { user: true } },
+              transactions: true
+            }
+          }
+        }
+      })
+    );
+
+    if (!ride) {
+      return res.status(404).json({ message: 'Ride not found.' });
+    }
+
+    if (ride.driverId !== req.user.id) {
+      return res.status(403).json({ message: 'Only the driver can cancel this ride.' });
+    }
+
+    if (!['active', 'full'].includes(ride.status)) {
+      return res.status(400).json({ message: `Cannot cancel a ride that is already '${ride.status}'.` });
+    }
+
+    // Build a list of wallet refunds for passengers who paid with wallet
+    const refundOps = [];
+    for (const trip of ride.trips) {
+      for (const { user: passenger } of trip.passengers) {
+        // Find wallet payment transactions for this passenger on this trip
+        const walletTxn = trip.transactions.find(
+          (t) => t.userId === passenger.id && t.type === 'payment' && t.method === 'wallet' && t.status === 'completed'
+        );
+        if (walletTxn) {
+          refundOps.push(
+            prisma.wallet.upsert({
+              where: { userId: passenger.id },
+              update: { balance: { increment: walletTxn.amount } },
+              create: { userId: passenger.id, balance: walletTxn.amount }
+            }),
+            prisma.transaction.create({
+              data: {
+                userId: passenger.id,
+                tripId: trip.id,
+                amount: walletTxn.amount,
+                type: 'refund',
+                method: 'wallet_refund',
+                status: 'completed'
+              }
+            })
+          );
+        }
+      }
+    }
+
+    await withRetry(() =>
+      prisma.$transaction([
+        // Cancel the ride
+        prisma.ride.update({ where: { id: rideId }, data: { status: 'cancelled' } }),
+
+        // Cancel all confirmed bookings on this ride
+        prisma.booking.updateMany({
+          where: { rideId, status: 'confirmed' },
+          data: { status: 'cancelled' }
+        }),
+
+        // Cancel all active trips for this ride
+        prisma.trip.updateMany({
+          where: { rideId, status: { in: ['booked', 'started'] } },
+          data: { status: 'cancelled' }
+        }),
+
+        // Wallet refunds if any
+        ...refundOps
+      ])
+    );
+
+    console.info('[cancelRide] Driver cancelled ride', { rideId, driverId: req.user.id });
+    return res.status(200).json({ message: 'Ride cancelled successfully. All passengers have been notified and refunded.' });
+  } catch (err) {
+    console.error('[cancelRide]', err);
+    return res.status(500).json({ message: 'Failed to cancel ride.' });
+  }
+});
+
 module.exports = router;
+

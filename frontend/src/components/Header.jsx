@@ -7,15 +7,20 @@ export const Header = ({ onProfileClick, currentTab, setCurrentTab, showTabs }) 
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef(null);
 
-  const tabs = [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'trips',   label: 'My Trips' },
-    { id: 'vehicle', label: 'My Vehicle' },
-    { id: 'history', label: 'Ride History' },
-    { id: 'wallet',  label: 'Wallet' },
-    { id: 'setting', label: 'Setting' },
-    { id: 'report',  label: 'Report' },
-  ];
+  const tabs = user?.role === 'admin'
+    ? [
+        { id: 'dashboard', label: 'Admin Dashboard' },
+        { id: 'report',  label: 'Reports & Analytics' }
+      ]
+    : [
+        { id: 'dashboard', label: 'Dashboard' },
+        { id: 'trips',   label: 'My Trips' },
+        { id: 'vehicle', label: 'My Vehicle' },
+        { id: 'history', label: 'Ride History' },
+        { id: 'wallet',  label: 'Wallet' },
+        { id: 'setting', label: 'Setting' },
+        { id: 'report',  label: 'Report' },
+      ];
 
   // Close dropdown when clicking outside
   useEffect(() => {

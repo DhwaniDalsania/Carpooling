@@ -62,7 +62,12 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       text = 'Payment Completed';
       bgColor = 'rgba(16, 185, 129, 0.15)';
       color = 'var(--color-brand)';
+    } else if (status === 'cancelled') {
+      text = 'Cancelled';
+      bgColor = 'rgba(107, 114, 128, 0.2)';
+      color = '#9ca3af';
     }
+
 
     return (
       <span style={{
@@ -159,6 +164,40 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
   // Reports Summary State (Screen 17)
   const [reportSummary, setReportSummary] = useState(null);
+
+  // Admin Dashboard States
+  const [adminStats, setAdminStats] = useState({ totalEmployees: 0, registeredVehicles: 0, ridesThisMonth: 0 });
+  const [adminTab, setAdminTab] = useState('employees'); // 'employees' | 'vehicles' | 'settings'
+  const [employeesList, setEmployeesList] = useState([]);
+  const [vehiclesList, setVehiclesList] = useState([]);
+  const [adminSettings, setAdminSettings] = useState({
+    name: '',
+    registeredAddress: '',
+    industry: '',
+    adminContact: '',
+    code: '',
+    fuelCostPerLitre: 0,
+    costPerKm: 0,
+    travelCostPerKm: 0
+  });
+
+  // Modal / Add Employee / Settings Edit States
+  const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
+  const [newEmpName, setNewEmpName] = useState('');
+  const [newEmpEmail, setNewEmpEmail] = useState('');
+  const [newEmpPassword, setNewEmpPassword] = useState('');
+  const [newEmpDept, setNewEmpDept] = useState('');
+  const [newEmpManager, setNewEmpManager] = useState('');
+  const [newEmpLocation, setNewEmpLocation] = useState('');
+
+  // Settings Edit states
+  const [settingsName, setSettingsName] = useState('');
+  const [settingsAddress, setSettingsAddress] = useState('');
+  const [settingsIndustry, setSettingsIndustry] = useState('');
+  const [settingsContact, setSettingsContact] = useState('');
+  const [settingsFuelCost, setSettingsFuelCost] = useState('');
+  const [settingsCostPerKm, setSettingsCostPerKm] = useState('');
+  const [settingsTravelCost, setSettingsTravelCost] = useState('');
 
   // Chat Panel states
   const [chatMessages, setChatMessages] = useState([]);
@@ -344,12 +383,211 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     }
   };
 
+  // ── Admin Dashboard Operations ──────────────────────────────────────────────
+
+  const fetchAdminStats = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/stats', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdminStats(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch admin stats', err);
+    }
+  };
+
+  const fetchAdminEmployees = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/employees', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEmployeesList(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch admin employees', err);
+    }
+  };
+
+  const fetchAdminVehicles = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/vehicles', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setVehiclesList(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch admin vehicles', err);
+    }
+  };
+
+  const fetchAdminSettings = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/settings', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdminSettings(data);
+        setSettingsName(data.name || '');
+        setSettingsAddress(data.registeredAddress || '');
+        setSettingsIndustry(data.industry || '');
+        setSettingsContact(data.adminContact || '');
+        setSettingsFuelCost(data.fuelCostPerLitre !== undefined ? String(data.fuelCostPerLitre) : '');
+        setSettingsCostPerKm(data.costPerKm !== undefined ? String(data.costPerKm) : '');
+        setSettingsTravelCost(data.travelCostPerKm !== undefined ? String(data.travelCostPerKm) : '');
+      }
+    } catch (err) {
+      console.error('Failed to fetch admin settings', err);
+    }
+  };
+
+  const handleToggleAccess = async (employeeId) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/admin/employees/${employeeId}/access`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        await fetchAdminEmployees();
+        await fetchAdminStats();
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Failed to toggle access.');
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleAdminToggleVehicleStatus = async (vehicleId, currentStatus) => {
+    if (!token) return;
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    try {
+      const res = await fetch(`/api/admin/vehicles/${vehicleId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        await fetchAdminVehicles();
+        await fetchAdminStats();
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Failed to toggle vehicle status.');
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleAddEmployeeSubmit = async (e) => {
+    e.preventDefault();
+    if (!newEmpName || !newEmpEmail || !newEmpPassword) {
+      alert('Please fill out all required fields.');
+      return;
+    }
+    setIsLoadingData(true);
+    try {
+      const res = await fetch('/api/admin/employees', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: newEmpName,
+          email: newEmpEmail,
+          password: newEmpPassword,
+          department: newEmpDept,
+          managerName: newEmpManager,
+          location: newEmpLocation
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to add employee.');
+
+      alert('Employee added successfully!');
+      setShowAddEmployeeModal(false);
+      setNewEmpName('');
+      setNewEmpEmail('');
+      setNewEmpPassword('');
+      setNewEmpDept('');
+      setNewEmpManager('');
+      setNewEmpLocation('');
+      await fetchAdminEmployees();
+      await fetchAdminStats();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const handleSaveSettingsSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoadingData(true);
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: settingsName,
+          registeredAddress: settingsAddress,
+          industry: settingsIndustry,
+          adminContact: settingsContact,
+          fuelCostPerLitre: parseFloat(settingsFuelCost) || 0,
+          costPerKm: parseFloat(settingsCostPerKm) || 0,
+          travelCostPerKm: parseFloat(settingsTravelCost) || 0
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to save settings.');
+
+      alert('Settings updated successfully!');
+      await fetchAdminSettings();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
   // Load data dynamically based on active tab switching
   useEffect(() => {
     if (!token) return;
 
-    fetchVehicles();
-    fetchTrips();
+    if (user?.role === 'admin') {
+      if (currentHeaderTab === 'dashboard') {
+        fetchAdminStats();
+        fetchAdminEmployees();
+        fetchAdminVehicles();
+        fetchAdminSettings();
+      }
+    } else {
+      fetchVehicles();
+      fetchTrips();
+    }
 
     if (currentHeaderTab === 'history') {
       fetchHistory();
@@ -358,7 +596,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     } else if (currentHeaderTab === 'report') {
       fetchReportSummary();
     }
-  }, [token, currentHeaderTab]);
+  }, [token, currentHeaderTab, user]);
 
   // Polling loop: Only refresh active trips every 10 seconds to keep UI responsive without DB locks
   useEffect(() => {
@@ -617,7 +855,68 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     }
   };
 
+  // Driver cancels their entire ride offer (before trip starts)
+  const handleCancelRide = async (rideId) => {
+    if (!window.confirm('Are you sure you want to cancel this ride? All passengers will be removed and refunded.')) return;
+    setIsLoadingData(true);
+    try {
+      const res = await fetch(`/api/rides/${rideId}/cancel`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to cancel ride.');
+      alert('✅ Ride cancelled. All passengers have been notified and refunded.');
+      setSelectedTrip(null);
+      await fetchTrips();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  // Passenger cancels their own booking
+  const handleCancelBooking = async (trip) => {
+    if (!window.confirm('Are you sure you want to cancel your booking? You will be removed from this ride.')) return;
+
+    // Find the booking id — we need to fetch it first via the bookings endpoint
+    setIsLoadingData(true);
+    try {
+      // Fetch all bookings for this ride to find this passenger's booking
+      const bRes = await fetch(`/api/rides/${trip.rideId}/bookings`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      let bookingId = null;
+      if (bRes.ok) {
+        const bookings = await bRes.json();
+        const myBooking = bookings.find(b => b.passengerId === user?.id && b.status === 'confirmed');
+        bookingId = myBooking?.id;
+      }
+
+      if (!bookingId) {
+        // Fallback: derive bookingId from trip metadata if API unavailable
+        throw new Error('Could not find your booking for this ride. Please refresh and try again.');
+      }
+
+      const res = await fetch(`/api/bookings/${bookingId}/cancel`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to cancel booking.');
+      alert('✅ Booking cancelled. Your seat has been released.');
+      setSelectedTrip(null);
+      await fetchTrips();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
   // ── Wallet and Payment Operations ──────────────────────────────────────────
+
 
   const handleStartPaymentFlow = (trip) => {
     setSelectedTrip(trip);
@@ -1036,313 +1335,539 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
           
           {/* Sub-view: DASHBOARD SEARCH/OFFER FORMS */}
           {currentHeaderTab === 'dashboard' && (
-            <div className="dashboard-container">
-              {/* Form Selection Tabs */}
-              <div className="dashboard-toggle-tabs">
-                <button
-                  className={`tab-toggle-btn ${activeSearchTab === 'find' ? 'active' : ''}`}
-                  onClick={() => setActiveSearchTab('find')}
-                >
-                  Find a Ride
-                </button>
-                <button
-                  className={`tab-toggle-btn ${activeSearchTab === 'offer' ? 'active' : ''}`}
-                  onClick={() => setActiveSearchTab('offer')}
-                >
-                  Offer a Ride
-                </button>
+            user?.role === 'admin' ? (
+              <div className="admin-dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
+                
+                {/* 1. Admin Top Stat Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+                  <div style={{
+                    backgroundColor: 'var(--bg-input)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '24px',
+                    boxShadow: 'var(--shadow-sm)'
+                  }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Employees</div>
+                    <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--color-brand)', marginTop: '8px' }}>
+                      {adminStats.totalEmployees}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    backgroundColor: 'var(--bg-input)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '24px',
+                    boxShadow: 'var(--shadow-sm)'
+                  }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Registered Vehicles</div>
+                    <div style={{ fontSize: '32px', fontWeight: '800', color: '#3b82f6', marginTop: '8px' }}>
+                      {adminStats.registeredVehicles}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    backgroundColor: 'var(--bg-input)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '24px',
+                    boxShadow: 'var(--shadow-sm)'
+                  }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Rides This Month</div>
+                    <div style={{ fontSize: '32px', fontWeight: '800', color: '#ec4899', marginTop: '8px' }}>
+                      {adminStats.ridesThisMonth}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Admin Three-Tab Navigation */}
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', gap: '16px' }}>
+                  {['employees', 'vehicles', 'settings'].map((tab) => (
+                    <button
+                      key={tab}
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        color: adminTab === tab ? 'var(--color-brand)' : 'var(--text-secondary)',
+                        border: 'none',
+                        borderBottom: adminTab === tab ? '3px solid var(--color-brand)' : '3px solid transparent',
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        textTransform: 'capitalize',
+                        transition: 'all 0.2s'
+                      }}
+                      onClick={() => setAdminTab(tab)}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 3. Tab Content Area */}
+                <div style={{
+                  backgroundColor: 'var(--bg-input)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '24px',
+                  boxShadow: 'var(--shadow-md)'
+                }}>
+                  {adminTab === 'employees' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>Employees Directory</h3>
+                        <button className="btn btn-primary" style={{ height: '36px', fontSize: '13px' }} onClick={() => setShowAddEmployeeModal(true)}>
+                          + Add Employee
+                        </button>
+                      </div>
+
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                              <th style={{ padding: '12px 16px' }}>Name</th>
+                              <th style={{ padding: '12px 16px' }}>Email</th>
+                              <th style={{ padding: '12px 16px' }}>Department</th>
+                              <th style={{ padding: '12px 16px' }}>Manager</th>
+                              <th style={{ padding: '12px 16px' }}>Location</th>
+                              <th style={{ padding: '12px 16px', textAlign: 'center' }}>Platform Access</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {employeesList.map((emp) => (
+                              <tr key={emp.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                <td style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-primary)' }}>{emp.name}</td>
+                                <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{emp.email}</td>
+                                <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{emp.department || '-'}</td>
+                                <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{emp.managerName || '-'}</td>
+                                <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{emp.location || '-'}</td>
+                                <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                  <button
+                                    className={`btn ${emp.platformAccess ? 'btn-secondary' : 'btn-primary'}`}
+                                    style={{
+                                      height: '28px',
+                                      padding: '0 12px',
+                                      fontSize: '11px',
+                                      fontWeight: '700',
+                                      borderColor: emp.platformAccess ? 'var(--color-brand)' : '#ef4444',
+                                      color: emp.platformAccess ? 'var(--color-brand)' : '#ef4444',
+                                      backgroundColor: emp.platformAccess ? 'rgba(15, 169, 88, 0.1)' : 'rgba(239, 68, 68, 0.1)'
+                                    }}
+                                    onClick={() => handleToggleAccess(emp.id)}
+                                  >
+                                    {emp.platformAccess ? 'Granted' : 'Revoked'}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {adminTab === 'vehicles' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>Registered Vehicles</h3>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                              <th style={{ padding: '12px 16px' }}>Registration Number</th>
+                              <th style={{ padding: '12px 16px' }}>Model</th>
+                              <th style={{ padding: '12px 16px' }}>Seating Capacity</th>
+                              <th style={{ padding: '12px 16px' }}>Driver</th>
+                              <th style={{ padding: '12px 16px', textAlign: 'center' }}>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {vehiclesList.map((veh) => (
+                              <tr key={veh.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                <td style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-primary)' }}>{veh.registrationNumber}</td>
+                                <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{veh.model}</td>
+                                <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{veh.seatingCapacity} seats</td>
+                                <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{veh.driver}</td>
+                                <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                  <button
+                                    className={`btn ${veh.status === 'active' ? 'btn-secondary' : 'btn-primary'}`}
+                                    style={{
+                                      height: '28px',
+                                      padding: '0 12px',
+                                      fontSize: '11px',
+                                      fontWeight: '700',
+                                      borderColor: veh.status === 'active' ? 'var(--color-brand)' : '#ef4444',
+                                      color: veh.status === 'active' ? 'var(--color-brand)' : '#ef4444',
+                                      backgroundColor: veh.status === 'active' ? 'rgba(15, 169, 88, 0.1)' : 'rgba(239, 68, 68, 0.1)'
+                                    }}
+                                    onClick={() => handleAdminToggleVehicleStatus(veh.id, veh.status)}
+                                  >
+                                    {veh.status === 'active' ? 'Active' : 'Inactive'}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {adminTab === 'settings' && (
+                    <form onSubmit={handleSaveSettingsSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                      <div>
+                        <h4 style={{ margin: '0 0 16px 0', fontSize: '14px', fontWeight: '700', color: 'var(--color-brand)', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Company Details</h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                          <div className="form-group">
+                            <label className="form-label">Company Name</label>
+                            <input
+                              type="text"
+                              className="input-field"
+                              value={settingsName}
+                              onChange={(e) => setSettingsName(e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Industry</label>
+                            <input
+                              type="text"
+                              className="input-field"
+                              value={settingsIndustry}
+                              onChange={(e) => setSettingsIndustry(e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                            <label className="form-label">Registered Address</label>
+                            <input
+                              type="text"
+                              className="input-field"
+                              value={settingsAddress}
+                              onChange={(e) => setSettingsAddress(e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Admin Contact Email</label>
+                            <input
+                              type="email"
+                              className="input-field"
+                              value={settingsContact}
+                              onChange={(e) => setSettingsContact(e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Total Registered Employees (Auto-calculated)</label>
+                            <input
+                              type="text"
+                              className="input-field"
+                              value={adminStats.totalEmployees}
+                              disabled
+                              style={{ cursor: 'not-allowed', opacity: 0.6 }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 style={{ margin: '0 0 16px 0', fontSize: '14px', fontWeight: '700', color: 'var(--color-brand)', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Carpooling Configuration</h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+                          <div className="form-group">
+                            <label className="form-label">Fuel Cost / Litre (Rs.)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="input-field"
+                              value={settingsFuelCost}
+                              onChange={(e) => setSettingsFuelCost(e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Cost Per KM (Rs.)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="input-field"
+                              value={settingsCostPerKm}
+                              onChange={(e) => setSettingsCostPerKm(e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Travel Cost Per KM (Rs.)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="input-field"
+                              value={settingsTravelCost}
+                              onChange={(e) => setSettingsTravelCost(e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <button type="submit" className="btn btn-primary" style={{ alignSelf: 'flex-start', height: '42px', padding: '0 24px' }}>
+                        Save Settings
+                      </button>
+                    </form>
+                  )}
+                </div>
+
+                {/* 4. Add Employee Modal */}
+                {showAddEmployeeModal && (
+                  <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 99999,
+                    backgroundColor: 'rgba(0,0,0,0.6)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '20px'
+                  }}>
+                    <div style={{
+                      backgroundColor: 'var(--bg-card)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '32px',
+                      maxWidth: '500px',
+                      width: '100%',
+                      boxShadow: 'var(--shadow-lg)'
+                    }}>
+                      <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)' }}>Add New Employee</h3>
+                      <form onSubmit={handleAddEmployeeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div className="form-group">
+                          <label className="form-label">Full Name *</label>
+                          <input
+                            type="text"
+                            className="input-field"
+                            value={newEmpName}
+                            onChange={(e) => setNewEmpName(e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Email Address *</label>
+                          <input
+                            type="email"
+                            className="input-field"
+                            value={newEmpEmail}
+                            onChange={(e) => setNewEmpEmail(e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Password *</label>
+                          <input
+                            type="password"
+                            className="input-field"
+                            value={newEmpPassword}
+                            onChange={(e) => setNewEmpPassword(e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Department</label>
+                          <input
+                            type="text"
+                            className="input-field"
+                            value={newEmpDept}
+                            onChange={(e) => setNewEmpDept(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Manager Name</label>
+                          <input
+                            type="text"
+                            className="input-field"
+                            value={newEmpManager}
+                            onChange={(e) => setNewEmpManager(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Office Location</label>
+                          <input
+                            type="text"
+                            className="input-field"
+                            value={newEmpLocation}
+                            onChange={(e) => setNewEmpLocation(e.target.value)}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                          <button type="submit" className="btn btn-primary" style={{ flex: 1, height: '40px' }} disabled={isLoadingData}>
+                            {isLoadingData ? 'Adding...' : 'Add Employee'}
+                          </button>
+                          <button type="button" className="btn btn-secondary" style={{ flex: 1, height: '40px' }} onClick={() => setShowAddEmployeeModal(false)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
               </div>
-
-              {/* Find a Ride Form */}
-              {activeSearchTab === 'find' && (
-                <form onSubmit={handleFindSubmit} className="auth-form">
-                  <div className="locations-container">
-                    <div className="form-group" style={{ position: 'relative' }}>
-                      <label className="form-label">Pickup Location</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Search size={18} />
-                        </div>
-                        <input
-                          type="text"
-                          className="input-field"
-                          placeholder="Search pickup location..."
-                          value={pickupLoc}
-                          onChange={(e) => handleLocationInputChange(e.target.value, 'find_pickup', setPickupLoc, setPickupSuggestions)}
-                          required
-                        />
-                      </div>
-                      
-                      {/* Suggestions list dropdown menu */}
-                      {pickupSuggestions.length > 0 && (
-                        <ul style={suggestionsDropdownStyle}>
-                          {pickupSuggestions.map((suggestion, idx) => (
-                            <li 
-                              key={idx} 
-                              style={suggestionItemStyle}
-                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                              onClick={() => {
-                                setPickupLoc(suggestion.address);
-                                setPickupCoords(suggestion);
-                                setPickupSuggestions([]);
-                              }}
-                            >
-                              {suggestion.address}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-
-                    <div className="swap-btn-container">
-                      <button
-                        type="button"
-                        className="swap-btn"
-                        onClick={handleSwapLocations}
-                        title="Swap locations"
-                      >
-                        <ArrowUpDown size={18} />
-                      </button>
-                    </div>
-
-                    <div className="form-group" style={{ position: 'relative' }}>
-                      <label className="form-label">Destination Location</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Search size={18} />
-                        </div>
-                        <input
-                          type="text"
-                          className="input-field"
-                          placeholder="Search destination location..."
-                          value={destLoc}
-                          onChange={(e) => handleLocationInputChange(e.target.value, 'find_dest', setDestLoc, setDestSuggestions)}
-                          required
-                        />
-                      </div>
-
-                      {/* Suggestions list dropdown menu */}
-                      {destSuggestions.length > 0 && (
-                        <ul style={suggestionsDropdownStyle}>
-                          {destSuggestions.map((suggestion, idx) => (
-                            <li 
-                              key={idx} 
-                              style={suggestionItemStyle}
-                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                              onClick={() => {
-                                setDestLoc(suggestion.address);
-                                setDestCoords(suggestion);
-                                setDestSuggestions([]);
-                              }}
-                            >
-                              {suggestion.address}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="form-row-2col">
-                    <div className="form-group">
-                      <label className="form-label">Date</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Calendar size={18} />
-                        </div>
-                        <input
-                          type="date"
-                          className="input-field"
-                          value={rideDate}
-                          onChange={(e) => setRideDate(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label className="form-label">Time</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Clock size={18} />
-                        </div>
-                        <input
-                          type="time"
-                          className="input-field"
-                          value={rideTime}
-                          onChange={(e) => setRideTime(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Number of Seats</label>
-                    <div className="input-icon-wrapper seat-select-wrapper">
-                      <div className="input-icon-left">
-                        <Users size={18} />
-                      </div>
-                      <select
-                        className="input-field seat-select"
-                        value={numSeats}
-                        onChange={(e) => setNumSeats(e.target.value)}
-                        required
-                      >
-                        <option value="1">1 Seat</option>
-                        <option value="2">2 Seats</option>
-                        <option value="3">3 Seats</option>
-                        <option value="4">4 Seats</option>
-                      </select>
-                      <ChevronDown size={18} className="select-arrow-icon" />
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Phone Number</label>
-                    <div className="input-icon-wrapper">
-                      <div className="input-icon-left">
-                        <Phone size={18} style={{ transform: 'rotate(90deg)' }} />
-                      </div>
-                      <input
-                        type="tel"
-                        className="input-field"
-                        placeholder="Enter your phone number..."
-                        value={phoneNum}
-                        onChange={(e) => setPhoneNum(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <button type="submit" className="btn btn-primary">
-                    <Navigation size={18} />
-                    <span>Find Ride</span>
+            ) : (
+              <div className="dashboard-container">
+                {/* Form Selection Tabs */}
+                <div className="dashboard-toggle-tabs">
+                  <button
+                    className={`tab-toggle-btn ${activeSearchTab === 'find' ? 'active' : ''}`}
+                    onClick={() => setActiveSearchTab('find')}
+                  >
+                    Find a Ride
                   </button>
-                </form>
-              )}
+                  <button
+                    className={`tab-toggle-btn ${activeSearchTab === 'offer' ? 'active' : ''}`}
+                    onClick={() => setActiveSearchTab('offer')}
+                  >
+                    Offer a Ride
+                  </button>
+                </div>
 
-              {/* Offer a Ride Form (Recurring rides checkbox and Fare input removed completely) */}
-              {activeSearchTab === 'offer' && (
-                <form onSubmit={handleOfferSubmit} className="auth-form">
-                  <div className="locations-container">
-                    <div className="form-group" style={{ position: 'relative' }}>
-                      <label className="form-label">Pickup Location</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Search size={18} />
+                {/* Find a Ride Form */}
+                {activeSearchTab === 'find' && (
+                  <form onSubmit={handleFindSubmit} className="auth-form">
+                    <div className="locations-container">
+                      <div className="form-group" style={{ position: 'relative' }}>
+                        <label className="form-label">Pickup Location</label>
+                        <div className="input-icon-wrapper">
+                          <div className="input-icon-left">
+                            <Search size={18} />
+                          </div>
+                          <input
+                            type="text"
+                            className="input-field"
+                            placeholder="Search pickup location..."
+                            value={pickupLoc}
+                            onChange={(e) => handleLocationInputChange(e.target.value, 'find_pickup', setPickupLoc, setPickupSuggestions)}
+                            required
+                          />
                         </div>
-                        <input
-                          type="text"
-                          className="input-field"
-                          placeholder="Search pickup location..."
-                          value={offerPickup}
-                          onChange={(e) => handleLocationInputChange(e.target.value, 'offer_pickup', setOfferPickup, setOfferPickupSuggestions)}
-                          required
-                        />
+                        
+                        {/* Suggestions list dropdown menu */}
+                        {pickupSuggestions.length > 0 && (
+                          <ul style={suggestionsDropdownStyle}>
+                            {pickupSuggestions.map((suggestion, idx) => (
+                              <li 
+                                key={idx} 
+                                style={suggestionItemStyle}
+                                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                                onClick={() => {
+                                  setPickupLoc(suggestion.address);
+                                  setPickupCoords(suggestion);
+                                  setPickupSuggestions([]);
+                                }}
+                              >
+                                {suggestion.address}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
 
-                      {/* Suggestions list dropdown menu */}
-                      {offerPickupSuggestions.length > 0 && (
-                        <ul style={suggestionsDropdownStyle}>
-                          {offerPickupSuggestions.map((suggestion, idx) => (
-                            <li 
-                              key={idx} 
-                              style={suggestionItemStyle}
-                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                              onClick={() => {
-                                setOfferPickup(suggestion.address);
-                                setOfferPickupCoords(suggestion);
-                                setOfferPickupSuggestions([]);
-                              }}
-                            >
-                              {suggestion.address}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-
-                    <div className="swap-btn-container">
-                      <button
-                        type="button"
-                        className="swap-btn"
-                        onClick={handleSwapLocations}
-                        title="Swap locations"
-                      >
-                        <ArrowUpDown size={18} />
-                      </button>
-                    </div>
-
-                    <div className="form-group" style={{ position: 'relative' }}>
-                      <label className="form-label">Destination Location</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Search size={18} />
-                        </div>
-                        <input
-                          type="text"
-                          className="input-field"
-                          placeholder="Search destination location..."
-                          value={offerDest}
-                          onChange={(e) => handleLocationInputChange(e.target.value, 'offer_dest', setOfferDest, setOfferDestSuggestions)}
-                          required
-                        />
+                      <div className="swap-btn-container">
+                        <button
+                          type="button"
+                          className="swap-btn"
+                          onClick={handleSwapLocations}
+                          title="Swap locations"
+                        >
+                          <ArrowUpDown size={18} />
+                        </button>
                       </div>
 
-                      {/* Suggestions list dropdown menu */}
-                      {offerDestSuggestions.length > 0 && (
-                        <ul style={suggestionsDropdownStyle}>
-                          {offerDestSuggestions.map((suggestion, idx) => (
-                            <li 
-                              key={idx} 
-                              style={suggestionItemStyle}
-                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                              onClick={() => {
-                                setOfferDest(suggestion.address);
-                                setOfferDestCoords(suggestion);
-                                setOfferDestSuggestions([]);
-                              }}
-                            >
-                              {suggestion.address}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
+                      <div className="form-group" style={{ position: 'relative' }}>
+                        <label className="form-label">Destination Location</label>
+                        <div className="input-icon-wrapper">
+                          <div className="input-icon-left">
+                            <Search size={18} />
+                          </div>
+                          <input
+                            type="text"
+                            className="input-field"
+                            placeholder="Search destination location..."
+                            value={destLoc}
+                            onChange={(e) => handleLocationInputChange(e.target.value, 'find_dest', setDestLoc, setDestSuggestions)}
+                            required
+                          />
+                        </div>
 
-                  <div className="form-row-2col">
+                        {/* Suggestions list dropdown menu */}
+                        {destSuggestions.length > 0 && (
+                          <ul style={suggestionsDropdownStyle}>
+                            {destSuggestions.map((suggestion, idx) => (
+                              <li 
+                                key={idx} 
+                                style={suggestionItemStyle}
+                                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                                onClick={() => {
+                                  setDestLoc(suggestion.address);
+                                  setDestCoords(suggestion);
+                                  setDestSuggestions([]);
+                                }}
+                              >
+                                {suggestion.address}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="form-row-2col">
+                      <div className="form-group">
+                        <label className="form-label">Date</label>
+                        <div className="input-icon-wrapper">
+                          <div className="input-icon-left">
+                            <Calendar size={18} />
+                          </div>
+                          <input
+                            type="date"
+                            className="input-field"
+                            value={rideDate}
+                            onChange={(e) => setRideDate(e.target.value)}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Time</label>
+                        <div className="input-icon-wrapper">
+                          <div className="input-icon-left">
+                            <Clock size={18} />
+                          </div>
+                          <input
+                            type="time"
+                            className="input-field"
+                            value={rideTime}
+                            onChange={(e) => setRideTime(e.target.value)}
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="form-group">
-                      <label className="form-label">Departure Date & Time</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Clock size={18} />
-                        </div>
-                        <input
-                          type="datetime-local"
-                          className="input-field"
-                          value={offerDateTime}
-                          onChange={(e) => setOfferDateTime(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label className="form-label">Available Seats</label>
+                      <label className="form-label">Number of Seats</label>
                       <div className="input-icon-wrapper seat-select-wrapper">
                         <div className="input-icon-left">
                           <Users size={18} />
                         </div>
                         <select
                           className="input-field seat-select"
-                          value={offerSeats}
-                          onChange={(e) => setOfferSeats(e.target.value)}
+                          value={numSeats}
+                          onChange={(e) => setNumSeats(e.target.value)}
                           required
                         >
                           <option value="1">1 Seat</option>
@@ -1353,60 +1878,215 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                         <ChevronDown size={18} className="select-arrow-icon" />
                       </div>
                     </div>
-                  </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Vehicle</label>
-                    <div className="input-icon-wrapper seat-select-wrapper">
-                      <div className="input-icon-left">
-                        <Car size={18} />
+                    <div className="form-group">
+                      <label className="form-label">Phone Number</label>
+                      <div className="input-icon-wrapper">
+                        <div className="input-icon-left">
+                          <Phone size={18} style={{ transform: 'rotate(90deg)' }} />
+                        </div>
+                        <input
+                          type="tel"
+                          className="input-field"
+                          placeholder="Enter your phone number..."
+                          value={phoneNum}
+                          onChange={(e) => setPhoneNum(e.target.value)}
+                          required
+                        />
                       </div>
-                      <select
-                        className="input-field seat-select"
-                        value={selectedVehicle}
-                        onChange={(e) => setSelectedVehicle(e.target.value)}
-                        required
-                      >
-                        {userVehicles.length === 0 ? (
-                          <option value="">-- No Vehicles Registered --</option>
-                        ) : (
-                          userVehicles
-                            .filter(v => v.status === 'active')
-                            .map((vehicle) => (
-                              <option key={vehicle.id} value={vehicle.id}>
-                                {vehicle.model} ({vehicle.registrationNumber})
-                              </option>
-                            ))
+                    </div>
+
+                    <button type="submit" className="btn btn-primary">
+                      <Navigation size={18} />
+                      <span>Find Ride</span>
+                    </button>
+                  </form>
+                )}
+
+                {/* Offer a Ride Form (Recurring rides checkbox and Fare input removed completely) */}
+                {activeSearchTab === 'offer' && (
+                  <form onSubmit={handleOfferSubmit} className="auth-form">
+                    <div className="locations-container">
+                      <div className="form-group" style={{ position: 'relative' }}>
+                        <label className="form-label">Pickup Location</label>
+                        <div className="input-icon-wrapper">
+                          <div className="input-icon-left">
+                            <Search size={18} />
+                          </div>
+                          <input
+                            type="text"
+                            className="input-field"
+                            placeholder="Search pickup location..."
+                            value={offerPickup}
+                            onChange={(e) => handleLocationInputChange(e.target.value, 'offer_pickup', setOfferPickup, setOfferPickupSuggestions)}
+                            required
+                          />
+                        </div>
+
+                        {/* Suggestions list dropdown menu */}
+                        {offerPickupSuggestions.length > 0 && (
+                          <ul style={suggestionsDropdownStyle}>
+                            {offerPickupSuggestions.map((suggestion, idx) => (
+                              <li 
+                                key={idx} 
+                                style={suggestionItemStyle}
+                                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                                onClick={() => {
+                                  setOfferPickup(suggestion.address);
+                                  setOfferPickupCoords(suggestion);
+                                  setOfferPickupSuggestions([]);
+                                }}
+                              >
+                                {suggestion.address}
+                              </li>
+                            ))}
+                          </ul>
                         )}
-                      </select>
-                      <ChevronDown size={18} className="select-arrow-icon" />
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Phone Number</label>
-                    <div className="input-icon-wrapper">
-                      <div className="input-icon-left">
-                        <Phone size={18} style={{ transform: 'rotate(90deg)' }} />
                       </div>
-                      <input
-                        type="tel"
-                        className="input-field"
-                        placeholder="Enter your phone number..."
-                        value={phoneNum}
-                        onChange={(e) => setPhoneNum(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
 
-                  <button type="submit" className="btn btn-primary">
-                    <Car size={18} />
-                    <span>Offer Ride</span>
-                  </button>
-                </form>
-              )}
-            </div>
+                      <div className="swap-btn-container">
+                        <button
+                          type="button"
+                          className="swap-btn"
+                          onClick={handleSwapLocations}
+                          title="Swap locations"
+                        >
+                          <ArrowUpDown size={18} />
+                        </button>
+                      </div>
+
+                      <div className="form-group" style={{ position: 'relative' }}>
+                        <label className="form-label">Destination Location</label>
+                        <div className="input-icon-wrapper">
+                          <div className="input-icon-left">
+                            <Search size={18} />
+                          </div>
+                          <input
+                            type="text"
+                            className="input-field"
+                            placeholder="Search destination location..."
+                            value={offerDest}
+                            onChange={(e) => handleLocationInputChange(e.target.value, 'offer_dest', setOfferDest, setOfferDestSuggestions)}
+                            required
+                          />
+                        </div>
+
+                        {/* Suggestions list dropdown menu */}
+                        {offerDestSuggestions.length > 0 && (
+                          <ul style={suggestionsDropdownStyle}>
+                            {offerDestSuggestions.map((suggestion, idx) => (
+                              <li 
+                                key={idx} 
+                                style={suggestionItemStyle}
+                                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                                onClick={() => {
+                                  setOfferDest(suggestion.address);
+                                  setOfferDestCoords(suggestion);
+                                  setOfferDestSuggestions([]);
+                                }}
+                              >
+                                {suggestion.address}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="form-row-2col">
+                      <div className="form-group">
+                        <label className="form-label">Departure Date & Time</label>
+                        <div className="input-icon-wrapper">
+                          <div className="input-icon-left">
+                            <Clock size={18} />
+                          </div>
+                          <input
+                            type="datetime-local"
+                            className="input-field"
+                            value={offerDateTime}
+                            onChange={(e) => setOfferDateTime(e.target.value)}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Available Seats</label>
+                        <div className="input-icon-wrapper seat-select-wrapper">
+                          <div className="input-icon-left">
+                            <Users size={18} />
+                          </div>
+                          <select
+                            className="input-field seat-select"
+                            value={offerSeats}
+                            onChange={(e) => setOfferSeats(e.target.value)}
+                            required
+                          >
+                            <option value="1">1 Seat</option>
+                            <option value="2">2 Seats</option>
+                            <option value="3">3 Seats</option>
+                            <option value="4">4 Seats</option>
+                          </select>
+                          <ChevronDown size={18} className="select-arrow-icon" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Vehicle</label>
+                      <div className="input-icon-wrapper seat-select-wrapper">
+                        <div className="input-icon-left">
+                          <Car size={18} />
+                        </div>
+                        <select
+                          className="input-field seat-select"
+                          value={selectedVehicle}
+                          onChange={(e) => setSelectedVehicle(e.target.value)}
+                          required
+                        >
+                          {userVehicles.length === 0 ? (
+                            <option value="">-- No Vehicles Registered --</option>
+                          ) : (
+                            userVehicles
+                              .filter(v => v.status === 'active')
+                              .map((vehicle) => (
+                                <option key={vehicle.id} value={vehicle.id}>
+                                  {vehicle.model} ({vehicle.registrationNumber})
+                                </option>
+                              ))
+                          )}
+                        </select>
+                        <ChevronDown size={18} className="select-arrow-icon" />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Phone Number</label>
+                      <div className="input-icon-wrapper">
+                        <div className="input-icon-left">
+                          <Phone size={18} style={{ transform: 'rotate(90deg)' }} />
+                        </div>
+                        <input
+                          type="tel"
+                          className="input-field"
+                          placeholder="Enter your phone number..."
+                          value={phoneNum}
+                          onChange={(e) => setPhoneNum(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <button type="submit" className="btn btn-primary">
+                      <Car size={18} />
+                      <span>Offer Ride</span>
+                    </button>
+                  </form>
+                )}
+              </div>
+            )
           )}
 
           {/* Sub-view: MY TRIPS & DETAIL & PAYMENT SCREENS */}
@@ -1930,6 +2610,18 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                                     ⏱️ Awaiting passenger payment confirmation...
                                   </span>
                                 )}
+
+                                {/* Driver Cancel Ride — only available before trip starts */}
+                                {selectedTrip.status === 'booked' && (
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ display: 'flex', gap: '8px', alignItems: 'center', height: '42px', padding: '0 16px', color: '#ef4444', borderColor: '#ef4444' }}
+                                    onClick={() => handleCancelRide(selectedTrip.rideId)}
+                                    disabled={isLoadingData}
+                                  >
+                                    <span>✕ Cancel Ride</span>
+                                  </button>
+                                )}
                               </div>
                             ) : (
                               /* Passenger Controls & Pay Now button */
@@ -1950,6 +2642,17 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                                     disabled
                                   >
                                     ✅ Payment Completed
+                                  </button>
+                                )}
+                                {/* Passenger Cancel Booking — only available before trip starts */}
+                                {selectedTrip.status === 'booked' && (
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ display: 'flex', gap: '8px', alignItems: 'center', height: '42px', padding: '0 16px', color: '#ef4444', borderColor: '#ef4444' }}
+                                    onClick={() => handleCancelBooking(selectedTrip)}
+                                    disabled={isLoadingData}
+                                  >
+                                    <span>✕ Cancel Booking</span>
                                   </button>
                                 )}
                                 {selectedTrip.status !== 'payment_pending' && selectedTrip.status !== 'payment_completed' && (

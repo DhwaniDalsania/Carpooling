@@ -52,6 +52,7 @@ model User {
   wallet          Wallet?
   transactions    Transaction[]
   messages        Message[]
+  savedPlaces     SavedPlace[]
 
   @@index([organizationId])
 }
@@ -175,6 +176,7 @@ enum TripStatus {
   completed
   payment_pending
   payment_completed
+  cancelled
 }
 
 // Join table: many passengers per trip
@@ -242,4 +244,20 @@ model Message {
 
   @@index([tripId])
   @@index([senderId])
+}
+
+// ─── Saved Places ─────────────────────────────────────────────────────────────
+
+model SavedPlace {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String
+  address   String
+  lat       Float
+  lng       Float
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
