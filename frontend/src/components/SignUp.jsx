@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { User, Phone, Mail, Lock, Building, ArrowLeft, Upload, Loader2, Check } from 'lucide-react';
+import { User, Phone, Mail, Lock, Building, ArrowLeft, Upload, Loader2, Check, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Header from './Header';
 import Sidebar from './Sidebar';
@@ -19,6 +19,8 @@ export const SignUp = ({ onNavigateToLogin, onNavigateBack }) => {
   // UI feedback states
   const [validationError, setValidationError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   
   const fileInputRef = useRef(null);
 
@@ -105,7 +107,7 @@ export const SignUp = ({ onNavigateToLogin, onNavigateBack }) => {
             {/* Error Alert */}
             {(validationError || error) && (
               <div className="feedback-alert feedback-error" style={{ marginBottom: '20px' }}>
-                {validationError || error}
+                {validationError || (typeof error === 'string' ? error : error?.message)}
               </div>
             )}
 
@@ -187,39 +189,59 @@ export const SignUp = ({ onNavigateToLogin, onNavigateBack }) => {
                     </div>
                   </div>
 
-                  {/* Password field */}
+                  {/* Password field with eye toggle */}
                   <div className="form-group">
                     <label className="form-label">Password</label>
-                    <div className="input-icon-wrapper">
+                    <div className="input-icon-wrapper" style={{ position: 'relative' }}>
                       <div className="input-icon-left">
                         <Lock size={18} />
                       </div>
                       <input
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         className="input-field"
                         placeholder="Enter password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         disabled={isLoading || successMessage}
+                        style={{ paddingRight: '44px' }}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        disabled={isLoading}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        style={{ position:'absolute', right:'12px', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:'4px', display:'flex', alignItems:'center' }}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
                     </div>
                   </div>
 
-                  {/* Confirm Password field */}
+                  {/* Confirm Password field with eye toggle */}
                   <div className="form-group">
                     <label className="form-label">Confirm Password</label>
-                    <div className="input-icon-wrapper">
+                    <div className="input-icon-wrapper" style={{ position: 'relative' }}>
                       <div className="input-icon-left">
                         <Lock size={18} />
                       </div>
                       <input
-                        type="password"
+                        type={showConfirm ? 'text' : 'password'}
                         className="input-field"
                         placeholder="Confirm your password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         disabled={isLoading || successMessage}
+                        style={{ paddingRight: '44px' }}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirm((v) => !v)}
+                        disabled={isLoading}
+                        aria-label={showConfirm ? 'Hide confirm password' : 'Show confirm password'}
+                        style={{ position:'absolute', right:'12px', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:'4px', display:'flex', alignItems:'center' }}
+                      >
+                        {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
                     </div>
                   </div>
                 </div>

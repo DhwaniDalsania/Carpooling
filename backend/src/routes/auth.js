@@ -6,7 +6,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const prisma = require('../lib/prisma');
+const { prisma, withRetry } = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -67,8 +67,8 @@ router.post('/register', async (req, res) => {
   }
 
   try {
-    // Check email uniqueness
-    const existing = await prisma.user.findUnique({ where: { email } });
+    // Check email uniqueness (withRetry handles Neon cold-start)
+    const existing = await withRetry(() => prisma.user.findUnique({ where: { email } }));
     if (existing) {
       return res.status(409).json({ message: 'An account with this email already exists' });
     }
@@ -76,7 +76,7 @@ router.post('/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
     // Find or create the organisation
-    let org = await prisma.organization.findUnique({ where: { code: organizationCode } });
+    let org = await withRetry(() => prisma.organization.findUnique({ where: { code: organizationCode } }));
     let role = 'employee';
 
     if (!org) {
@@ -87,7 +87,7 @@ router.post('/register', async (req, res) => {
             'Organization not found. To create a new org, also provide: orgName, registeredAddress, industry, adminContact',
         });
       }
-      org = await prisma.organization.create({
+      org = await withRetry(() => prisma.organization.create({
         data: {
           name: orgName,
           registeredAddress,
@@ -98,11 +98,11 @@ router.post('/register', async (req, res) => {
           costPerKm: costPerKm ?? 0,
           travelCostPerKm: travelCostPerKm ?? 0,
         },
-      });
+      }));
       role = 'admin'; // First registrant becomes admin
     }
 
-    const user = await prisma.user.create({
+    const user = await withRetry(() => prisma.user.create({
       data: {
         name,
         email,
@@ -114,10 +114,10 @@ router.post('/register', async (req, res) => {
         location: location ?? null,
         photoUrl: photoUrl ?? null,
       },
-    });
+    }));
 
     // Auto-create wallet with ₹0 balance
-    await prisma.wallet.create({ data: { userId: user.id, balance: 0 } });
+    await withRetry(() => prisma.wallet.create({ data: { userId: user.id, balance: 0 } }));
 
     return res.status(201).json({
       message: 'Account created successfully! Please log in.',
@@ -142,10 +142,10 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    const user = await prisma.user.findUnique({
+    const user = await withRetry(() => prisma.user.findUnique({
       where: { email },
       include: { organization: true },
-    });
+    }));
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
@@ -180,10 +180,10 @@ router.post('/login', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/me', requireAuth, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
+    const user = await withRetry(() => prisma.user.findUnique({
       where: { id: req.user.id },
       include: { organization: true, wallet: true },
-    });
+    }));
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });

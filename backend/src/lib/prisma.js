@@ -1,5 +1,5 @@
 // src/lib/prisma.js
-// Singleton Prisma client — reuse across hot-reload cycles in dev.
+// Singleton Prisma client — optimised for Neon serverless (PgBouncer pooler).
 
 const { PrismaClient } = require('@prisma/client');
 
@@ -9,8 +9,46 @@ const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    // Neon PgBouncer works in transaction mode; disable prepared statements
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
   });
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
-module.exports = prisma;
+/**
+ * Wraps a Prisma call with up to 3 retries on connection/pool errors.
+ * Neon auto-suspends compute; the first request after idle may fail.
+ * Subsequent retries hit a warm compute and succeed.
+ */
+async function withRetry(fn, retries = 3, delayMs = 2000) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isConnErr =
+        err.code === 'P1001' ||
+        err.code === 'P1002' ||
+        err.errorCode === 'P1001' ||
+        err.errorCode === 'P1002' ||
+        err.message?.includes('connection pool') ||
+        err.message?.includes('Timed out') ||
+        err.message?.includes('connect');
+
+      if (isConnErr && attempt < retries) {
+        console.warn(`[prisma] Connection error (attempt ${attempt}/${retries}), retrying in ${delayMs}ms…`);
+        await prisma.$disconnect().catch(() => {});
+        await new Promise((r) => setTimeout(r, delayMs));
+        await prisma.$connect().catch(() => {});
+        delayMs *= 2; // exponential backoff: 2s → 4s
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
+module.exports = { prisma, withRetry };
