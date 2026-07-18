@@ -27,6 +27,13 @@ router.post('/create-order', requireAuth, async (req, res) => {
     const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
+    if (!keyId || !keySecret) {
+      console.error('[createOrder] Razorpay credentials (RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET) are missing in environment.');
+      return res.status(500).json({ message: 'Razorpay is not configured on the server. Missing Key ID or Key Secret.' });
+    }
+
+    console.info('[createOrder] Creating Razorpay order', { tripId, amount: trip.fare });
+
     // Check if real Razorpay mode is available
     if (keyId && keySecret) {
       try {
@@ -40,32 +47,33 @@ router.post('/create-order', requireAuth, async (req, res) => {
         const order = await rzp.orders.create({
           amount: Math.round(trip.fare * 100),
           currency: 'INR',
-          receipt: `receipt_trip_${trip.id}`,
+          receipt: `trp_${trip.id.slice(-12)}_${Date.now().toString().slice(-8)}`, // max 40 chars
           payment_capture: 1
         });
 
         return res.status(200).json({
-          orderId: order.id,
+          order_id: order.id,
           amount: order.amount,
           currency: order.currency,
-          key: keyId,
-          isMock: false
+          key_id: keyId
         });
       } catch (err) {
-        console.error('[Razorpay Order Creation Failed, falling back to mock]', err);
+        const errMsg = err?.error?.description || err?.error?.code || err?.message || 'Unknown error';
+        console.error('[createOrder] Razorpay order creation failed:', JSON.stringify(err));
+        return res.status(502).json({ message: `Razorpay could not create a payment order: ${errMsg}. Please try again.` });
       }
     }
 
-    // Fallback: Return simulated/mock order token
+    // Fallback: Return simulated/mock order token (formatted with snake_case keys matching frontend)
     return res.status(200).json({
-      orderId: 'order_mock_' + Math.random().toString(36).substring(7),
+      order_id: 'order_mock_' + Math.random().toString(36).substring(7),
       amount: Math.round(trip.fare * 100),
       currency: 'INR',
-      key: 'rzp_test_mockkey',
+      key_id: 'rzp_test_mockkey',
       isMock: true
     });
   } catch (err) {
-    console.error('[createOrder]', err);
+    console.error('[createOrder] Unexpected error:', err);
     return res.status(500).json({ message: 'Failed to create payment order.' });
   }
 });

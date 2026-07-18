@@ -627,6 +627,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
   const handleProceedPayment = async () => {
     if (!selectedTrip) return;
+    console.info('[payment] Pay button clicked', { tripId: selectedTrip.id, method: paymentMethod });
 
     if (paymentMethod === 'wallet') {
       if (walletBalance < selectedTrip.fare) {
@@ -694,6 +695,12 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     } else {
       setIsLoadingData(true);
       try {
+        // 1. Verify window.Razorpay is defined before opening checkout (Requirement 1)
+        if (typeof window.Razorpay !== 'function') {
+          throw new Error('Razorpay Checkout SDK did not load. Disable content blockers and refresh the page.');
+        }
+
+        console.info('[payment] Calling create-order API', { tripId: selectedTrip.id });
         const res = await fetch('/api/payments/create-order', {
           method: 'POST',
           headers: {
@@ -703,21 +710,45 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
           body: JSON.stringify({ tripId: selectedTrip.id })
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.message || 'Failed to create payment order.');
+        
+        // Handle failed order creation
+        if (!res.ok) {
+          throw new Error(data.message || 'Failed to create payment order.');
+        }
+
+        console.info('[payment] Order response received', { status: res.status, order_id: data.order_id, amount: data.amount, currency: data.currency });
+        
+        // 2. Validate order response properties individually to throw meaningful error messages (Requirement 8)
+        if (!data.key_id) {
+          throw new Error('Razorpay Key ID is missing from the server response.');
+        }
+        if (!data.order_id) {
+          throw new Error('Razorpay Order ID is missing from the server response.');
+        }
+        if (!data.amount || !data.currency) {
+          throw new Error('Razorpay order amount or currency is missing from the server response.');
+        }
 
         if (data.isMock) {
-          setRazorpayOrder(data);
+          console.info('[payment] Razorpay returned a mock order. Redirecting to Simulated Sandbox.');
+          setRazorpayOrder({
+            orderId: data.order_id,
+            amount: data.amount,
+            currency: data.currency
+          });
           setActivePaymentMode('gateway');
         } else {
           const options = {
-            key: data.key,
+            key: data.key_id,
             amount: data.amount,
             currency: data.currency,
             name: 'Carpooling Platform',
             description: `Payment for Ride #${selectedTrip.id}`,
-            order_id: data.orderId,
+            order_id: data.order_id,
             handler: async function (response) {
               try {
+                console.info('[payment] Razorpay payment success received', { paymentId: response.razorpay_payment_id });
+                console.info('[payment] Calling payment verification API');
                 const verifyRes = await fetch('/api/payments/verify', {
                   method: 'POST',
                   headers: {
@@ -734,6 +765,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                 });
                 const verifyData = await verifyRes.json();
                 if (!verifyRes.ok) throw new Error(verifyData.message || 'Signature mismatch');
+                console.info('[payment] Payment verification succeeded');
 
                 setPaymentSuccessData({
                   method: paymentMethod === 'card' ? 'Razorpay Card' : 'Razorpay UPI',
@@ -744,6 +776,13 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                 await fetchTrips();
               } catch (err) {
                 alert(err.message);
+                console.error('[payment] Payment verification failed', err);
+              }
+            },
+            modal: {
+              ondismiss: function () {
+                console.warn('[payment] Razorpay Checkout payment cancelled by user');
+                alert('Payment cancelled by user.');
               }
             },
             prefill: {
@@ -754,11 +793,18 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
               color: '#0fa958'
             }
           };
+          console.info('[payment] Razorpay initialized', { order_id: data.order_id });
           const rzp = new window.Razorpay(options);
+          rzp.on('payment.failed', (response) => {
+            console.error('[payment] Razorpay payment failed', response.error);
+            alert(response.error?.description || 'Razorpay payment failed. Please try again.');
+          });
+          console.info('[payment] Opening Razorpay Checkout');
           rzp.open();
         }
       } catch (err) {
         alert(err.message);
+        console.error('[payment] Checkout failed to open', err);
       } finally {
         setIsLoadingData(false);
       }
@@ -826,9 +872,17 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       return;
     }
 
+    // Verify Razorpay SDK is available upfront
+    if (typeof window.Razorpay !== 'function') {
+      alert('Razorpay Checkout SDK did not load. Disable content blockers and refresh the page.');
+      return;
+    }
+
     setIsLoadingData(true);
     try {
-      const res = await fetch('/api/wallet/recharge', {
+      console.info('[recharge] Creating Razorpay order for wallet top-up', { amount: amountVal, method: rechargeMethod });
+
+      const res = await fetch('/api/wallet/recharge-order', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -838,14 +892,74 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Failed to recharge wallet.');
+      if (!res.ok) throw new Error(data.message || 'Failed to create recharge order.');
 
-      alert(`Successfully added ₹ ${amountVal} to your wallet!`);
-      setRechargeAmt('500');
-      setRechargeUpiId('');
-      await fetchWalletData();
+      console.info('[recharge] Razorpay order created', { order_id: data.order_id, amount: data.amount });
+
+      if (!data.key_id) throw new Error('Razorpay Key ID is missing from the server response.');
+      if (!data.order_id) throw new Error('Razorpay Order ID is missing from the server response.');
+
+      const options = {
+        key: data.key_id,
+        amount: data.amount,
+        currency: data.currency || 'INR',
+        name: 'Carpooling Platform',
+        description: `Wallet Recharge — ₹${amountVal}`,
+        order_id: data.order_id,
+        handler: async function (response) {
+          try {
+            console.info('[recharge] Razorpay payment success', { paymentId: response.razorpay_payment_id });
+            const verifyRes = await fetch('/api/wallet/recharge-verify', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                amount: amountVal
+              })
+            });
+            const verifyData = await verifyRes.json();
+            if (!verifyRes.ok) throw new Error(verifyData.message || 'Payment verification failed.');
+            console.info('[recharge] Wallet credited successfully');
+            alert(`✅ Successfully added ₹${amountVal} to your wallet!`);
+            setRechargeAmt('500');
+            setRechargeUpiId('');
+            await fetchWalletData();
+          } catch (err) {
+            alert(err.message);
+            console.error('[recharge] Recharge verify failed', err);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            console.warn('[recharge] Razorpay recharge cancelled by user');
+            alert('Wallet recharge cancelled.');
+          }
+        },
+        prefill: {
+          name: user?.name,
+          email: user?.email
+        },
+        method: rechargeMethod === 'card' ? { card: true } : { upi: true },
+        theme: {
+          color: '#0fa958'
+        }
+      };
+
+      console.info('[recharge] Opening Razorpay Checkout for wallet recharge');
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', (response) => {
+        console.error('[recharge] Razorpay payment failed', response.error);
+        alert(response.error?.description || 'Razorpay recharge payment failed. Please try again.');
+      });
+      rzp.open();
     } catch (err) {
       alert(err.message);
+      console.error('[recharge] Checkout failed', err);
     } finally {
       setIsLoadingData(false);
     }
