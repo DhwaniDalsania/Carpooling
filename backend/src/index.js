@@ -67,12 +67,13 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date() }));
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/user', require('./routes/user'));
+app.use('/api/rides', require('./routes/rides'));
+app.use('/api/bookings', require('./routes/bookings'));
+app.use('/api/trips', require('./routes/trips'));
+app.use('/api/vehicles', require('./routes/vehicles'));
 
 // Placeholder routers — to be implemented in subsequent tasks
-// app.use('/api/rides',    require('./routes/rides'));
-// app.use('/api/bookings', require('./routes/bookings'));
-// app.use('/api/trips',    require('./routes/trips'));
-// app.use('/api/vehicles', require('./routes/vehicles'));
 // app.use('/api/wallet',   require('./routes/wallet'));
 // app.use('/api/payments', require('./routes/payments'));
 // app.use('/api/reports',  require('./routes/reports'));

@@ -47,14 +47,14 @@ async function main() {
   });
   console.log(`✅ Admin: ${admin.email}`);
 
-  // Employee 1 — will act as a driver in demos
-  const emp1Hash = await bcrypt.hash('Driver@123', SALT_ROUNDS);
+  // Employee 1 — Priya Sharma
+  const emp1Hash = await bcrypt.hash('Priya@123', SALT_ROUNDS);
   const driver = await prisma.user.upsert({
-    where: { email: 'driver@acme.com' },
+    where: { email: 'priya@acme.com' },
     update: {},
     create: {
       name: 'Priya Sharma',
-      email: 'driver@acme.com',
+      email: 'priya@acme.com',
       passwordHash: emp1Hash,
       role: 'employee',
       organizationId: org.id,
@@ -63,16 +63,16 @@ async function main() {
       location: 'Koramangala, Bengaluru',
     },
   });
-  console.log(`✅ Driver employee: ${driver.email}`);
+  console.log(`✅ Employee 1: ${driver.email}`);
 
-  // Employee 2 — will act as a passenger in demos
-  const emp2Hash = await bcrypt.hash('Passenger@123', SALT_ROUNDS);
+  // Employee 2 — Rohan Verma
+  const emp2Hash = await bcrypt.hash('Rohan@123', SALT_ROUNDS);
   const passenger = await prisma.user.upsert({
-    where: { email: 'passenger@acme.com' },
+    where: { email: 'rohan@acme.com' },
     update: {},
     create: {
       name: 'Rohan Verma',
-      email: 'passenger@acme.com',
+      email: 'rohan@acme.com',
       passwordHash: emp2Hash,
       role: 'employee',
       organizationId: org.id,
@@ -81,7 +81,7 @@ async function main() {
       location: 'Indiranagar, Bengaluru',
     },
   });
-  console.log(`✅ Passenger employee: ${passenger.email}`);
+  console.log(`✅ Employee 2: ${passenger.email}`);
 
   // Create wallets for all seeded users
   for (const u of [admin, driver, passenger]) {
@@ -94,10 +94,10 @@ async function main() {
   console.log('✅ Wallets created (₹500 each)');
 
   console.log('\n🎉 Seed complete! Demo credentials:');
-  console.log('  Admin    → admin@acme.com      / Admin@123');
-  console.log('  Driver   → driver@acme.com     / Driver@123');
-  console.log('  Passenger→ passenger@acme.com  / Passenger@123');
-  console.log('  Org code → DEMO2024');
+  console.log('  Admin      → admin@acme.com      / Admin@123');
+  console.log('  Employee 1 → priya@acme.com      / Priya@123');
+  console.log('  Employee 2 → rohan@acme.com      / Rohan@123');
+  console.log('  Org code   → DEMO2024');
 }
 
 main()

@@ -3,14 +3,14 @@ import {
   Search, ArrowUpDown, Clock, Users, ChevronDown, Repeat, 
   DollarSign, Car, Calendar, Navigation, MessageSquare, 
   Phone, MapPin, MoreVertical, Plus, Trash2, Wallet, Settings, Activity,
-  ArrowLeft, Check
+  ArrowLeft, Check, Loader2, ArrowRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Header from './Header';
 import Sidebar from './Sidebar';
 
 export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   
   // Dashboard Tabs (dashboard, trips, vehicle, history, wallet, setting)
   const [currentHeaderTab, setCurrentHeaderTab] = useState('dashboard');
@@ -37,14 +37,13 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   const [offerDateTime, setOfferDateTime] = useState('');
   const [offerSeats, setOfferSeats] = useState('1');
   const [offerFare, setOfferFare] = useState('');
-  const [selectedVehicle, setSelectedVehicle] = useState('v1');
+  const [selectedVehicle, setSelectedVehicle] = useState('');
 
-  // Stub of user's registered vehicles
-  const [userVehicles, setUserVehicles] = useState([
-    { id: 'v1', model: 'Toyota Prius', regNumber: 'GJ01AB1234', capacity: 4, status: 'active' },
-    { id: 'v2', model: 'Tesla Model 3', regNumber: 'GJ01CD5678', capacity: 4, status: 'active' },
-    { id: 'v3', model: 'Honda Civic', regNumber: 'GJ01EF9012', capacity: 5, status: 'inactive' }
-  ]);
+  // Dynamic lists from backend
+  const [userVehicles, setUserVehicles] = useState([]);
+  const [activeTrips, setActiveTrips] = useState([]);
+  const [historyTrips, setHistoryTrips] = useState([]);
+  const [isLoadingData, setIsLoadingData] = useState(false);
 
   // Add Vehicle Form States
   const [newModel, setNewModel] = useState('');
@@ -52,6 +51,78 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   const [newCapacity, setNewCapacity] = useState('4');
   const [newActive, setNewActive] = useState(true);
   const [vehicleSuccess, setVehicleSuccess] = useState('');
+
+  // ── Database Fetching Handlers ─────────────────────────────────────────────
+  
+  const fetchVehicles = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/vehicles', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUserVehicles(data);
+        const activeCar = data.find(v => v.status === 'active');
+        if (activeCar) {
+          setSelectedVehicle(activeCar.id);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch vehicles', err);
+    }
+  };
+
+  const fetchTrips = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/trips?history=false', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveTrips(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch active trips', err);
+    }
+  };
+
+  const fetchHistory = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/trips?history=true', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryTrips(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch history trips', err);
+    }
+  };
+
+  // Sync data loaders depending on current tab
+  useEffect(() => {
+    if (!token) return;
+
+    const loadData = async () => {
+      setIsLoadingData(true);
+      if (currentHeaderTab === 'dashboard' || currentHeaderTab === 'vehicle') {
+        await fetchVehicles();
+      }
+      if (currentHeaderTab === 'trips') {
+        await fetchTrips();
+      }
+      if (currentHeaderTab === 'history') {
+        await fetchHistory();
+      }
+      setIsLoadingData(false);
+    };
+
+    loadData();
+  }, [currentHeaderTab, token]);
 
   // Swap Locations function
   const handleSwapLocations = () => {
@@ -88,6 +159,14 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   // Submit Offer Ride
   const handleOfferSubmit = (e) => {
     e.preventDefault();
+    
+    // Validate that a vehicle exists only when publishing a ride
+    if (userVehicles.length === 0) {
+      alert('You must register a vehicle first before offering a ride.');
+      setCurrentHeaderTab('vehicle');
+      return;
+    }
+
     if (!offerPickup.trim() || !offerDest.trim() || !offerDateTime || !offerSeats || !offerFare || !selectedVehicle) {
       alert('All fields are required.');
       return;
@@ -102,35 +181,53 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       dateTime: offerDateTime,
       seats: offerSeats,
       fare: offerFare,
-      vehicle: selectedCar ? `${selectedCar.model} (${selectedCar.regNumber})` : 'Registered Vehicle'
+      vehicleId: selectedVehicle,
+      vehicle: selectedCar ? `${selectedCar.model} (${selectedCar.registrationNumber})` : 'Registered Vehicle'
     });
   };
 
   // Add Vehicle Submit
-  const handleAddVehicle = (e) => {
+  const handleAddVehicle = async (e) => {
     e.preventDefault();
     if (!newModel.trim() || !newReg.trim() || !newCapacity) {
       alert('All fields are required');
       return;
     }
 
-    const newCar = {
-      id: 'v' + (userVehicles.length + 1),
-      model: newModel,
-      regNumber: newReg,
-      capacity: parseInt(newCapacity),
-      status: newActive ? 'active' : 'inactive'
-    };
+    try {
+      const res = await fetch('/api/vehicles', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          model: newModel,
+          registrationNumber: newReg,
+          seatingCapacity: parseInt(newCapacity, 10),
+          status: newActive ? 'active' : 'inactive'
+        })
+      });
 
-    setUserVehicles([...userVehicles, newCar]);
-    setNewModel('');
-    setNewReg('');
-    setNewCapacity('4');
-    setNewActive(true);
-    setVehicleSuccess('Vehicle added successfully!');
-    setTimeout(() => setVehicleSuccess(''), 2000);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to register vehicle.');
+      }
+
+      setVehicleSuccess('Vehicle registered successfully!');
+      setNewModel('');
+      setNewReg('');
+      setNewCapacity('4');
+      setNewActive(true);
+      
+      await fetchVehicles();
+      setTimeout(() => setVehicleSuccess(''), 2000);
+    } catch (err) {
+      alert(err.message);
+    }
   };
 
+  // Toggle vehicle status locally
   const handleToggleVehicleStatus = (id) => {
     setUserVehicles(userVehicles.map(v => {
       if (v.id === id) {
@@ -138,6 +235,23 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       }
       return v;
     }));
+  };
+
+  const formatRideDate = (datetimeStr) => {
+    if (!datetimeStr) return '';
+    try {
+      const date = new Date(datetimeStr);
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      const day = date.getDate();
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const month = monthNames[date.getMonth()];
+      const year = date.getFullYear().toString().substring(2);
+      
+      return `${hours}:${minutes} ${day}/${month}/${year}`;
+    } catch {
+      return datetimeStr;
+    }
   };
 
   // Helper to determine sidebar text rotation label
@@ -441,13 +555,17 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                           onChange={(e) => setSelectedVehicle(e.target.value)}
                           required
                         >
-                          {userVehicles
-                            .filter(v => v.status === 'active')
-                            .map((vehicle) => (
-                              <option key={vehicle.id} value={vehicle.id}>
-                                {vehicle.model} ({vehicle.regNumber})
-                              </option>
-                            ))}
+                          {userVehicles.length === 0 ? (
+                            <option value="">-- No Vehicles Registered --</option>
+                          ) : (
+                            userVehicles
+                              .filter(v => v.status === 'active')
+                              .map((vehicle) => (
+                                <option key={vehicle.id} value={vehicle.id}>
+                                  {vehicle.model} ({vehicle.registrationNumber})
+                                </option>
+                              ))
+                          )}
                         </select>
                         <ChevronDown size={18} className="select-arrow-icon" />
                       </div>
@@ -463,7 +581,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
             </div>
           )}
 
-          {/* Sub-view: MY TRIPS - TRIP DETAILS (Matches Image 3 Exactly) */}
+          {/* Sub-view: MY TRIPS - TRIP DETAILS (Matches Image 3 Exactly, now fully relational) */}
           {currentHeaderTab === 'trips' && (
             <div className="dashboard-container" style={{ maxWidth: '800px' }}>
               
@@ -473,137 +591,215 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                 <span>Trip Detail</span>
               </button>
 
-              {/* Trip Details main Card */}
-              <div style={{ 
-                backgroundColor: 'var(--bg-input)', 
-                border: '1px solid var(--border-color)', 
-                borderRadius: 'var(--radius-lg)', 
-                padding: '28px', 
-                boxShadow: 'var(--shadow-md)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '24px',
-                position: 'relative'
-              }}>
-                {/* 3-dots actions icon on top-right */}
-                <button style={{ 
-                  position: 'absolute', 
-                  top: '24px', 
-                  right: '24px', 
-                  background: 'none', 
-                  border: 'none', 
-                  color: 'var(--text-muted)', 
-                  cursor: 'pointer' 
-                }}>
-                  <MoreVertical size={20} />
-                </button>
-
-                {/* Driver Details Row */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div style={{ 
-                    width: '56px', 
-                    height: '56px', 
-                    borderRadius: '50%', 
-                    backgroundColor: 'var(--bg-card)', 
-                    border: '2px solid var(--border-color)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--text-secondary)'
-                  }}>
-                    <Users size={28} />
-                  </div>
-                  <div>
-                    <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>Raj Patel</h2>
-                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>iskcon to Infocity</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>07:00 PM 18/July/26</div>
-                  </div>
+              {isLoadingData ? (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <Loader2 className="animate-spin" size={28} style={{ margin: '0 auto' }} />
                 </div>
-
-                {/* Route/Vehicle Details Grid */}
+              ) : activeTrips.length === 0 ? (
                 <div style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: '1fr 1fr 1fr', 
-                  gap: '16px', 
-                  backgroundColor: 'rgba(11, 15, 25, 0.4)', 
-                  padding: '20px', 
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-color)' 
+                  textAlign: 'center', 
+                  padding: '48px 24px', 
+                  backgroundColor: 'var(--bg-input)', 
+                  border: '1px dashed var(--border-color)', 
+                  borderRadius: '12px',
+                  color: 'var(--text-secondary)'
                 }}>
-                  {/* Vehicle Column */}
-                  <div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Vehicle</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                      <Car size={18} className="brand-logo" />
-                      <div>
-                        <div style={{ fontSize: '14px', fontWeight: '600' }}>Swift Dzire</div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>GJ01AB1234</div>
+                  No upcoming active trips scheduled. Search rides to book a seat, or offer a ride to publish an route!
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {activeTrips.map((trip) => {
+                    // Determine role dynamically per trip from relationship
+                    const isDriver = trip.driverId === user?.id;
+
+                    return (
+                      <div 
+                        key={trip.id}
+                        style={{ 
+                          backgroundColor: 'var(--bg-input)', 
+                          border: '1px solid var(--border-color)', 
+                          borderRadius: 'var(--radius-lg)', 
+                          padding: '28px', 
+                          boxShadow: 'var(--shadow-md)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '24px',
+                          position: 'relative'
+                        }}
+                      >
+                        {/* 3-dots actions icon on top-right */}
+                        <button style={{ 
+                          position: 'absolute', 
+                          top: '24px', 
+                          right: '24px', 
+                          background: 'none', 
+                          border: 'none', 
+                          color: 'var(--text-muted)', 
+                          cursor: 'pointer' 
+                        }}>
+                          <MoreVertical size={20} />
+                        </button>
+
+                        {/* Badge specifying dynamic role */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ 
+                            fontSize: '11px', 
+                            fontWeight: '700', 
+                            textTransform: 'uppercase',
+                            letterSpacing: '1px',
+                            padding: '3px 10px', 
+                            borderRadius: '4px',
+                            backgroundColor: isDriver ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                            color: isDriver ? 'var(--color-brand)' : '#3b82f6'
+                          }}>
+                            {isDriver ? 'Driver View' : 'Passenger View'}
+                          </span>
+                        </div>
+
+                        {/* Driver / Passenger details row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <div style={{ 
+                            width: '56px', 
+                            height: '56px', 
+                            borderRadius: '50%', 
+                            backgroundColor: 'var(--bg-card)', 
+                            border: '2px solid var(--border-color)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'var(--text-secondary)'
+                          }}>
+                            <Users size={28} />
+                          </div>
+                          <div>
+                            {isDriver ? (
+                              <>
+                                <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>
+                                  You (Driver)
+                                </h2>
+                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                  Passengers: {trip.passengers?.length > 0 
+                                    ? trip.passengers.map(p => p.user?.name).join(', ') 
+                                    : 'No passengers registered yet.'}
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>
+                                  {trip.driver?.name || 'Carpool Driver'}
+                                </h2>
+                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                  {trip.ride?.pickupAddress} to {trip.ride?.destAddress}
+                                </div>
+                              </>
+                            )}
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              {formatRideDate(trip.ride?.datetime)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Route/Vehicle Details Grid */}
+                        <div style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: '1fr 1fr 1fr', 
+                          gap: '16px', 
+                          backgroundColor: 'rgba(11, 15, 25, 0.4)', 
+                          padding: '20px', 
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--border-color)' 
+                        }}>
+                          {/* Vehicle Column */}
+                          <div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Vehicle</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+                              <Car size={18} className="brand-logo" />
+                              <div>
+                                <div style={{ fontSize: '14px', fontWeight: '600' }}>{trip.vehicle?.model || 'Swift Dzire'}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{trip.vehicle?.registrationNumber || 'GJ01AB1234'}</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Pick Up Point Column */}
+                          <div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Pick UP Point</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+                              <MapPin size={18} style={{ color: '#3b82f6' }} />
+                              <div style={{ fontSize: '14px', fontWeight: '600' }}>{trip.ride?.pickupAddress || 'Iskcon'}</div>
+                            </div>
+                          </div>
+
+                          {/* Drop Point Column */}
+                          <div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Drop Point</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+                              <MapPin size={18} style={{ color: 'var(--color-brand)' }} />
+                              <div style={{ fontSize: '14px', fontWeight: '600' }}>{trip.ride?.destAddress || 'Infocity'}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Communication and Price bar */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
+                          
+                          {/* Buttons group (only shown for passengers communicating with drivers) */}
+                          <div style={{ display: 'flex', gap: '12px' }}>
+                            {!isDriver ? (
+                              <>
+                                <button className="btn btn-secondary" style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}>
+                                  <MessageSquare size={16} />
+                                  <span>Chat with Driver</span>
+                                </button>
+                                <button className="btn btn-secondary" style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}>
+                                  <Phone size={16} />
+                                  <span>Call To Driver</span>
+                                </button>
+                                <button 
+                                  className="btn btn-primary" 
+                                  style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}
+                                  onClick={() => onNavigate('track-ride', {
+                                    pickupLocation: trip.ride?.pickupAddress,
+                                    destination: trip.ride?.destAddress,
+                                    driverName: trip.driver?.name,
+                                    vehicleName: trip.vehicle?.model,
+                                    vehicleReg: trip.vehicle?.registrationNumber
+                                  })}
+                                >
+                                  <Navigation size={16} />
+                                  <span>Track Ride</span>
+                                </button>
+                              </>
+                            ) : (
+                              <div style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Check size={16} style={{ color: 'var(--color-brand)' }} />
+                                <span>You are driving this route. Keep navigation logs open.</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Fare group */}
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                              ₹ {trip.fare}
+                            </span>
+                            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                              {isDriver ? ' earned' : ' total'}
+                            </span>
+                          </div>
+
+                        </div>
+
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Pick Up Point Column */}
-                  <div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Pick UP Point</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                      <MapPin size={18} style={{ color: '#3b82f6' }} />
-                      <div style={{ fontSize: '14px', fontWeight: '600' }}>Iskcon</div>
-                    </div>
-                  </div>
-
-                  {/* Drop Point Column */}
-                  <div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Drop Point</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                      <MapPin size={18} style={{ color: 'var(--color-brand)' }} />
-                      <div style={{ fontSize: '14px', fontWeight: '600' }}>Infocity</div>
-                    </div>
-                  </div>
+                    );
+                  })}
                 </div>
-
-                {/* Communication and Price bar */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
-                  
-                  {/* Buttons group */}
-                  <div style={{ display: 'flex', gap: '12px' }}>
-                    <button className="btn btn-secondary" style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}>
-                      <MessageSquare size={16} />
-                      <span>Chat with Driver</span>
-                    </button>
-                    <button className="btn btn-secondary" style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}>
-                      <Phone size={16} />
-                      <span>Call To Driver</span>
-                    </button>
-                    <button 
-                      className="btn btn-primary" 
-                      style={{ height: '42px', padding: '0 16px', fontSize: '13px' }}
-                      onClick={() => onNavigate('track-ride', {
-                        pickupLocation: 'Iskcon',
-                        destination: 'Infocity',
-                        driverName: 'Raj Patel',
-                        vehicleName: 'Swift Dzire',
-                        vehicleReg: 'GJ01AB1234'
-                      })}
-                    >
-                      <Navigation size={16} />
-                      <span>Track Ride</span>
-                    </button>
-                  </div>
-
-                  {/* Fare group */}
-                  <div style={{ textAlign: 'right' }}>
-                    <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)' }}>₹ 120</span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}> / Seat 1</span>
-                  </div>
-
-                </div>
-
-              </div>
+              )}
 
             </div>
           )}
 
-          {/* Sub-view: MY VEHICLE (Matches Screen 10 / Registered Vehicle structures) */}
+          {/* Sub-view: MY VEHICLE (Now fully relational) */}
           {currentHeaderTab === 'vehicle' && (
             <div className="dashboard-container" style={{ maxWidth: '800px' }}>
               
@@ -618,45 +814,61 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>Registered Vehicles</h2>
                   
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {userVehicles.map(vehicle => (
-                      <div key={vehicle.id} style={{ 
-                        backgroundColor: 'var(--bg-input)', 
-                        border: '1px solid var(--border-color)', 
-                        padding: '16px', 
-                        borderRadius: 'var(--radius-md)',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}>
-                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                          <div style={{ color: vehicle.status === 'active' ? 'var(--color-brand)' : 'var(--text-muted)' }}>
-                            <Car size={24} />
+                  {isLoadingData ? (
+                    <Loader2 className="animate-spin" size={24} style={{ margin: '20px auto' }} />
+                  ) : userVehicles.length === 0 ? (
+                    <div style={{ 
+                      padding: '24px', 
+                      backgroundColor: 'rgba(11, 15, 25, 0.4)', 
+                      border: '1px dashed var(--border-color)', 
+                      borderRadius: '8px', 
+                      textAlign: 'center',
+                      color: 'var(--text-muted)',
+                      fontSize: '13px'
+                    }}>
+                      No vehicles registered yet. Add your vehicle using the form.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {userVehicles.map(vehicle => (
+                        <div key={vehicle.id} style={{ 
+                          backgroundColor: 'var(--bg-input)', 
+                          border: '1px solid var(--border-color)', 
+                          padding: '16px', 
+                          borderRadius: 'var(--radius-md)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                            <div style={{ color: vehicle.status === 'active' ? 'var(--color-brand)' : 'var(--text-muted)' }}>
+                              <Car size={24} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{vehicle.model}</div>
+                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Reg: {vehicle.registrationNumber} • {vehicle.seatingCapacity} seats</div>
+                            </div>
                           </div>
-                          <div>
-                            <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{vehicle.model}</div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Reg: {vehicle.regNumber} • {vehicle.capacity} seats</div>
+                          
+                          {/* Toggle switch for Active status */}
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                            <label className="toggle-wrapper" style={{ gap: '6px' }}>
+                              <input
+                                type="checkbox"
+                                className="toggle-input"
+                                checked={vehicle.status === 'active'}
+                                onChange={() => handleToggleVehicleStatus(vehicle.id)}
+                              />
+                              <div className="toggle-switch" style={{ width: '38px', height: '20px' }}></div>
+                              <span style={{ fontSize: '11px', color: vehicle.status === 'active' ? 'var(--color-brand)' : 'var(--text-muted)', fontWeight: '600' }}>
+                                {vehicle.status === 'active' ? 'Active' : 'Inactive'}
+                              </span>
+                            </label>
                           </div>
                         </div>
-                        
-                        {/* Toggle switch for Active status */}
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-                          <label className="toggle-wrapper" style={{ gap: '6px' }}>
-                            <input
-                              type="checkbox"
-                              className="toggle-input"
-                              checked={vehicle.status === 'active'}
-                              onChange={() => handleToggleVehicleStatus(vehicle.id)}
-                            />
-                            <div className="toggle-switch" style={{ width: '38px', height: '20px' }}></div>
-                            <span style={{ fontSize: '11px', color: vehicle.status === 'active' ? 'var(--color-brand)' : 'var(--text-muted)', fontWeight: '600' }}>
-                              {vehicle.status === 'active' ? 'Active' : 'Inactive'}
-                            </span>
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Add new vehicle form column */}
@@ -737,23 +949,89 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
             </div>
           )}
 
-          {/* Sub-view: PLACEHOLDERS FOR OTHER TABS (History, Wallet, Setting) */}
-          {['history', 'wallet', 'setting'].includes(currentHeaderTab) && (
+          {/* Sub-view: RIDE HISTORY (Now fully relational) */}
+          {currentHeaderTab === 'history' && (
+            <div className="dashboard-container" style={{ maxWidth: '800px' }}>
+              <button className="back-header" onClick={() => setCurrentHeaderTab('dashboard')}>
+                <ArrowLeft size={16} />
+                <span>Dashboard</span>
+              </button>
+
+              <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '16px' }}>Ride History</h2>
+              
+              {isLoadingData ? (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <Loader2 className="animate-spin" size={28} style={{ margin: '0 auto' }} />
+                </div>
+              ) : historyTrips.length === 0 ? (
+                <div style={{ 
+                  textAlign: 'center', 
+                  padding: '40px 20px', 
+                  backgroundColor: 'var(--bg-input)', 
+                  border: '1px dashed var(--border-color)', 
+                  borderRadius: '12px',
+                  color: 'var(--text-secondary)'
+                }}>
+                  No completed or cancelled rides in your history.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {historyTrips.map(trip => {
+                    const isDriver = trip.driverId === user?.id;
+                    return (
+                      <div key={trip.id} style={{ 
+                        backgroundColor: 'var(--bg-input)', 
+                        border: '1px solid var(--border-color)', 
+                        padding: '16px 20px', 
+                        borderRadius: 'var(--radius-md)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}>
+                        <div>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: '600', 
+                              padding: '2px 8px', 
+                              borderRadius: '4px',
+                              backgroundColor: isDriver ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                              color: isDriver ? 'var(--color-brand)' : '#3b82f6'
+                            }}>
+                              {isDriver ? 'Driver' : 'Passenger'}
+                            </span>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>
+                              {trip.ride?.pickupAddress} to {trip.ride?.destAddress}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                            {formatRideDate(trip.ride?.datetime)} • Status: {trip.status}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>₹ {trip.fare}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sub-view: PLACEHOLDERS FOR Other TABS (Wallet, Setting) */}
+          {['wallet', 'setting'].includes(currentHeaderTab) && (
             <div className="dashboard-container" style={{ maxWidth: '600px', alignItems: 'center', textAlign: 'center', padding: '48px 32px' }}>
               
-              {currentHeaderTab === 'history' && (
-                <>
-                  <Activity size={48} className="brand-logo" style={{ marginBottom: '16px' }} />
-                  <h2>Ride History</h2>
-                  <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>Log of completed trips and ride statistics will display here.</p>
-                </>
-              )}
-
               {currentHeaderTab === 'wallet' && (
                 <>
                   <Wallet size={48} className="brand-logo" style={{ marginBottom: '16px' }} />
                   <h2>My Wallet</h2>
-                  <p style={{ color: 'var(--text-muted)', marginTop: '8px', fontSize: '15px' }}>Current Balance: <strong style={{ color: 'var(--color-brand)', fontSize: '20px' }}>$50.00</strong></p>
+                  <p style={{ color: 'var(--text-muted)', marginTop: '8px', fontSize: '15px' }}>
+                    Current Balance: <strong style={{ color: 'var(--color-brand)', fontSize: '20px' }}>
+                      ₹ {user?.wallet?.balance !== undefined ? user.wallet.balance : '500.00'}
+                    </strong>
+                  </p>
                   <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>Transactions, recharges, and billing summaries will display here.</p>
                 </>
               )}

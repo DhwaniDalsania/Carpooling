@@ -26,11 +26,11 @@ npm run dev
 
 ## Demo Credentials (after seed)
 
-| Role      | Email                  | Password       |
-|-----------|------------------------|----------------|
-| Admin     | admin@acme.com         | Admin@123      |
-| Driver    | driver@acme.com        | Driver@123     |
-| Passenger | passenger@acme.com     | Passenger@123  |
+| Role       | Email                  | Password       |
+|------------|------------------------|----------------|
+| Admin      | admin@acme.com         | Admin@123      |
+| Employee 1 | priya@acme.com         | Priya@123      |
+| Employee 2 | rohan@acme.com         | Rohan@123      |
 
 Org code: **DEMO2024**
 
