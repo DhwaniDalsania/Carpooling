@@ -43,9 +43,7 @@ async function withRetry(fn, retries = 5, delayMs = 3000) {
 
       if (isConnErr && attempt < retries) {
         console.warn(`[prisma] Connection error (attempt ${attempt}/${retries}), retrying in ${delayMs}ms…`);
-        await prisma.$disconnect().catch(() => {});
         await new Promise((r) => setTimeout(r, delayMs));
-        await prisma.$connect().catch(() => {});
         delayMs = Math.min(delayMs * 1.5, 10000); // cap at 10s
       } else {
         throw err;
