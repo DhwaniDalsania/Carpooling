@@ -203,12 +203,55 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     return type;
   };
   
+  const getInitialValue = (field, defaultValue = '') => {
+    if (!dashboardState) return defaultValue;
+    const query = dashboardState.searchQuery || dashboardState;
+    
+    if (query.type === 'find' || dashboardState.searchQuery) {
+      if (field === 'pickupLoc') return query.pickupLocation || query.pickup || '';
+      if (field === 'pickupCoords') {
+        return query.pickupLat ? { address: query.pickupLocation || query.pickup, lat: query.pickupLat, lng: query.pickupLng } : null;
+      }
+      if (field === 'destLoc') return query.destination || '';
+      if (field === 'destCoords') {
+        return query.destLat ? { address: query.destination, lat: query.destLat, lng: query.destLng } : null;
+      }
+      if (field === 'rideDate') return query.date || '';
+      if (field === 'rideTime') return query.time || '';
+      if (field === 'numSeats') return query.seats || '1';
+    }
+    
+    if (query.type === 'offer') {
+      if (field === 'offerPickup') return query.pickupLocation || '';
+      if (field === 'offerPickupCoords') {
+        return query.pickupLat ? { address: query.pickupLocation, lat: query.pickupLat, lng: query.pickupLng } : null;
+      }
+      if (field === 'offerDest') return query.destination || '';
+      if (field === 'offerDestCoords') {
+        return query.destLat ? { address: query.destination, lat: query.destLat, lng: query.destLng } : null;
+      }
+      if (field === 'offerDateTime') return query.dateTime || '';
+      if (field === 'offerSeats') return query.seats || '1';
+      if (field === 'selectedVehicle') return query.vehicleId || '';
+    }
+    
+    return defaultValue;
+  };
+
+  const getInitialTab = () => {
+    if (!dashboardState) return 'find';
+    const query = dashboardState.searchQuery || dashboardState;
+    if (query.type === 'offer') return 'offer';
+    return 'find';
+  };
+
   // Dashboard Tabs (dashboard, trips, vehicle, history, wallet, setting, report)
   const [currentHeaderTab, setCurrentHeaderTab] = useState('dashboard');
-  const [activeSearchTab, setActiveSearchTab] = useState('find'); // 'find' or 'offer'
+  const [activeSearchTab, setActiveSearchTab] = useState(getInitialTab()); // 'find' or 'offer'
   
   // Trip details drill-down state
   const [selectedTrip, setSelectedTrip] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Address search query suggestion states
   const [pickupSuggestions, setPickupSuggestions] = useState([]);
@@ -217,24 +260,24 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   const [offerDestSuggestions, setOfferDestSuggestions] = useState([]);
 
   // Resolved coordinate selection states (Requirement 2)
-  const [pickupCoords, setPickupCoords] = useState(null); // { address, lat, lng }
-  const [destCoords, setDestCoords] = useState(null); // { address, lat, lng }
-  const [offerPickupCoords, setOfferPickupCoords] = useState(null); // { address, lat, lng }
-  const [offerDestCoords, setOfferDestCoords] = useState(null); // { address, lat, lng }
+  const [pickupCoords, setPickupCoords] = useState(getInitialValue('pickupCoords', null));
+  const [destCoords, setDestCoords] = useState(getInitialValue('destCoords', null));
+  const [offerPickupCoords, setOfferPickupCoords] = useState(getInitialValue('offerPickupCoords', null));
+  const [offerDestCoords, setOfferDestCoords] = useState(getInitialValue('offerDestCoords', null));
 
   // Input textbox states
-  const [pickupLoc, setPickupLoc] = useState('');
-  const [destLoc, setDestLoc] = useState('');
-  const [rideDate, setRideDate] = useState('');
-  const [rideTime, setRideTime] = useState('');
-  const [numSeats, setNumSeats] = useState('1');
+  const [pickupLoc, setPickupLoc] = useState(getInitialValue('pickupLoc', ''));
+  const [destLoc, setDestLoc] = useState(getInitialValue('destLoc', ''));
+  const [rideDate, setRideDate] = useState(getInitialValue('rideDate', ''));
+  const [rideTime, setRideTime] = useState(getInitialValue('rideTime', ''));
+  const [numSeats, setNumSeats] = useState(getInitialValue('numSeats', '1'));
 
   // Offer a Ride Form States
-  const [offerPickup, setOfferPickup] = useState('');
-  const [offerDest, setOfferDest] = useState('');
-  const [offerDateTime, setOfferDateTime] = useState('');
-  const [offerSeats, setOfferSeats] = useState('1');
-  const [selectedVehicle, setSelectedVehicle] = useState('');
+  const [offerPickup, setOfferPickup] = useState(getInitialValue('offerPickup', ''));
+  const [offerDest, setOfferDest] = useState(getInitialValue('offerDest', ''));
+  const [offerDateTime, setOfferDateTime] = useState(getInitialValue('offerDateTime', ''));
+  const [offerSeats, setOfferSeats] = useState(getInitialValue('offerSeats', '1'));
+  const [selectedVehicle, setSelectedVehicle] = useState(getInitialValue('selectedVehicle', ''));
 
   // Dynamic lists from backend
   const [userVehicles, setUserVehicles] = useState([]);
@@ -580,59 +623,71 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   // Submit Find Ride (requires explicit selected Nominatim suggestions & phone verification)
   const handleFindSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     if (!pickupLoc.trim() || !destLoc.trim() || !rideDate || !rideTime || !numSeats || !phoneNum.trim()) {
       alert('All fields are required.');
       return;
     }
 
-    let resolvedPickup = pickupCoords;
-    if (!resolvedPickup || resolvedPickup.address.trim() !== pickupLoc.trim()) {
-      resolvedPickup = await resolveAddressCoords(pickupLoc);
-      if (!resolvedPickup) {
-        alert('Could not resolve pickup location. Please select a valid location from the suggestions.');
-        return;
+    setIsSubmitting(true);
+    try {
+      let resolvedPickup = pickupCoords;
+      if (!resolvedPickup || resolvedPickup.address.trim() !== pickupLoc.trim()) {
+        resolvedPickup = await resolveAddressCoords(pickupLoc);
+        if (!resolvedPickup) {
+          alert('Could not resolve pickup location. Please select a valid location from the suggestions.');
+          setIsSubmitting(false);
+          return;
+        }
+        setPickupCoords(resolvedPickup);
+        setPickupLoc(resolvedPickup.address);
       }
-      setPickupCoords(resolvedPickup);
-      setPickupLoc(resolvedPickup.address);
-    }
 
-    let resolvedDest = destCoords;
-    if (!resolvedDest || resolvedDest.address.trim() !== destLoc.trim()) {
-      resolvedDest = await resolveAddressCoords(destLoc);
-      if (!resolvedDest) {
-        alert('Could not resolve destination location. Please select a valid location from the suggestions.');
-        return;
+      let resolvedDest = destCoords;
+      if (!resolvedDest || resolvedDest.address.trim() !== destLoc.trim()) {
+        resolvedDest = await resolveAddressCoords(destLoc);
+        if (!resolvedDest) {
+          alert('Could not resolve destination location. Please select a valid location from the suggestions.');
+          setIsSubmitting(false);
+          return;
+        }
+        setDestCoords(resolvedDest);
+        setDestLoc(resolvedDest.address);
       }
-      setDestCoords(resolvedDest);
-      setDestLoc(resolvedDest.address);
-    }
-    
-    // Auto-update profile in database if changed
-    if (phoneNum.trim() !== user?.phone) {
-      try {
-        await updateProfile(user.name, user.photoUrl, phoneNum.trim());
-      } catch (err) {
-        console.error('Failed to auto-update profile phone number:', err);
+      
+      // Auto-update profile in database if changed
+      if (phoneNum.trim() !== user?.phone) {
+        try {
+          await updateProfile(user.name, user.photoUrl, phoneNum.trim());
+        } catch (err) {
+          console.error('Failed to auto-update profile phone number:', err);
+        }
       }
-    }
 
-    onNavigate('route-confirmation', {
-      type: 'find',
-      pickupLocation: resolvedPickup.address,
-      pickupLat: resolvedPickup.lat,
-      pickupLng: resolvedPickup.lng,
-      destination: resolvedDest.address,
-      destLat: resolvedDest.lat,
-      destLng: resolvedDest.lng,
-      date: rideDate,
-      time: rideTime,
-      seats: numSeats
-    });
+      onNavigate('route-confirmation', {
+        type: 'find',
+        pickupLocation: resolvedPickup.address,
+        pickupLat: resolvedPickup.lat,
+        pickupLng: resolvedPickup.lng,
+        destination: resolvedDest.address,
+        destLat: resolvedDest.lat,
+        destLng: resolvedDest.lng,
+        date: rideDate,
+        time: rideTime,
+        seats: numSeats
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Submit Offer Ride (requires explicit selected Nominatim suggestions & phone verification)
   const handleOfferSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     
     if (userVehicles.length === 0) {
       alert('You must register a vehicle first before offering a ride.');
@@ -645,51 +700,60 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       return;
     }
 
-    let resolvedPickup = offerPickupCoords;
-    if (!resolvedPickup || resolvedPickup.address.trim() !== offerPickup.trim()) {
-      resolvedPickup = await resolveAddressCoords(offerPickup);
-      if (!resolvedPickup) {
-        alert('Could not resolve pickup location. Please select a valid location from the suggestions.');
-        return;
+    setIsSubmitting(true);
+    try {
+      let resolvedPickup = offerPickupCoords;
+      if (!resolvedPickup || resolvedPickup.address.trim() !== offerPickup.trim()) {
+        resolvedPickup = await resolveAddressCoords(offerPickup);
+        if (!resolvedPickup) {
+          alert('Could not resolve pickup location. Please select a valid location from the suggestions.');
+          setIsSubmitting(false);
+          return;
+        }
+        setOfferPickupCoords(resolvedPickup);
+        setOfferPickup(resolvedPickup.address);
       }
-      setOfferPickupCoords(resolvedPickup);
-      setOfferPickup(resolvedPickup.address);
-    }
 
-    let resolvedDest = offerDestCoords;
-    if (!resolvedDest || resolvedDest.address.trim() !== offerDest.trim()) {
-      resolvedDest = await resolveAddressCoords(offerDest);
-      if (!resolvedDest) {
-        alert('Could not resolve destination location. Please select a valid location from the suggestions.');
-        return;
+      let resolvedDest = offerDestCoords;
+      if (!resolvedDest || resolvedDest.address.trim() !== offerDest.trim()) {
+        resolvedDest = await resolveAddressCoords(offerDest);
+        if (!resolvedDest) {
+          alert('Could not resolve destination location. Please select a valid location from the suggestions.');
+          setIsSubmitting(false);
+          return;
+        }
+        setOfferDestCoords(resolvedDest);
+        setOfferDest(resolvedDest.address);
       }
-      setOfferDestCoords(resolvedDest);
-      setOfferDest(resolvedDest.address);
-    }
 
-    // Auto-update profile in database if changed
-    if (phoneNum.trim() !== user?.phone) {
-      try {
-        await updateProfile(user.name, user.photoUrl, phoneNum.trim());
-      } catch (err) {
-        console.error('Failed to auto-update profile phone number:', err);
+      // Auto-update profile in database if changed
+      if (phoneNum.trim() !== user?.phone) {
+        try {
+          await updateProfile(user.name, user.photoUrl, phoneNum.trim());
+        } catch (err) {
+          console.error('Failed to auto-update profile phone number:', err);
+        }
       }
-    }
 
-    const selectedCar = userVehicles.find(v => v.id === selectedVehicle);
-    onNavigate('route-confirmation', {
-      type: 'offer',
-      pickupLocation: resolvedPickup.address,
-      pickupLat: resolvedPickup.lat,
-      pickupLng: resolvedPickup.lng,
-      destination: resolvedDest.address,
-      destLat: resolvedDest.lat,
-      destLng: resolvedDest.lng,
-      dateTime: offerDateTime,
-      seats: offerSeats,
-      vehicleId: selectedVehicle,
-      vehicle: selectedCar ? `${selectedCar.model} (${selectedCar.registrationNumber})` : 'Registered Vehicle'
-    });
+      const selectedCar = userVehicles.find(v => v.id === selectedVehicle);
+      onNavigate('route-confirmation', {
+        type: 'offer',
+        pickupLocation: resolvedPickup.address,
+        pickupLat: resolvedPickup.lat,
+        pickupLng: resolvedPickup.lng,
+        destination: resolvedDest.address,
+        destLat: resolvedDest.lat,
+        destLng: resolvedDest.lng,
+        dateTime: offerDateTime,
+        seats: offerSeats,
+        vehicleId: selectedVehicle,
+        vehicle: selectedCar ? `${selectedCar.model} (${selectedCar.registrationNumber})` : 'Registered Vehicle'
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Add/Edit Vehicle Submit (upper-cased registration code checks)
@@ -1453,8 +1517,8 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                     </div>
                   </div>
 
-                  <button type="submit" className="btn btn-primary">
-                    <Navigation size={18} />
+                  <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                    {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Navigation size={18} />}
                     <span>Find Ride</span>
                   </button>
                 </form>
@@ -1636,8 +1700,8 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                     </div>
                   </div>
 
-                  <button type="submit" className="btn btn-primary">
-                    <Car size={18} />
+                  <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                    {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Car size={18} />}
                     <span>Offer Ride</span>
                   </button>
                 </form>
