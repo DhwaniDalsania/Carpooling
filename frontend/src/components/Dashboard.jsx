@@ -259,6 +259,10 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   const [offerPickupSuggestions, setOfferPickupSuggestions] = useState([]);
   const [offerDestSuggestions, setOfferDestSuggestions] = useState([]);
 
+  // Saved places state
+  const [savedPlaces, setSavedPlaces] = useState([]);
+  const savedPlacesRef = useRef([]);
+
   // Resolved coordinate selection states (Requirement 2)
   const [pickupCoords, setPickupCoords] = useState(getInitialValue('pickupCoords', null));
   const [destCoords, setDestCoords] = useState(getInitialValue('destCoords', null));
@@ -341,14 +345,34 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   // ── Address Autocomplete Suggestions Query (Nominatim) ─────────────────────
   
   const fetchSuggestions = async (query, setSuggestions) => {
-    const trimmed = query.trim();
+    const trimmed = query.trim().toLowerCase();
+    
+    let localMatches = [];
+    if (savedPlacesRef.current && savedPlacesRef.current.length > 0) {
+      if (trimmed.length === 0) {
+        localMatches = savedPlacesRef.current;
+      } else {
+        localMatches = savedPlacesRef.current.filter(p => 
+          p.label.toLowerCase().includes(trimmed) || 
+          p.address.toLowerCase().includes(trimmed)
+        );
+      }
+    }
+
+    const formattedLocal = localMatches.map(p => ({
+      address: p.address,
+      label: p.label,
+      lat: p.lat,
+      lng: p.lng
+    }));
+
     if (trimmed.length < 3) {
-      setSuggestions([]);
+      setSuggestions(formattedLocal);
       return;
     }
 
     if (nominatimCache[trimmed]) {
-      setSuggestions(nominatimCache[trimmed]);
+      setSuggestions([...formattedLocal, ...nominatimCache[trimmed]]);
       return;
     }
 
@@ -367,7 +391,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
           lng: parseFloat(item.lon)
         }));
         nominatimCache[trimmed] = results;
-        setSuggestions(results);
+        setSuggestions([...formattedLocal, ...results]);
       }
     } catch (err) {
       console.error('[Nominatim Error]', err);
@@ -488,12 +512,29 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     }
   };
 
+  const fetchSavedPlaces = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/saved-places', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSavedPlaces(data);
+        savedPlacesRef.current = data;
+      }
+    } catch (err) {
+      console.error('Failed to fetch saved places', err);
+    }
+  };
+
   // Load data dynamically based on active tab switching
   useEffect(() => {
     if (!token) return;
 
     fetchVehicles();
     fetchTrips();
+    fetchSavedPlaces();
 
     if (currentHeaderTab === 'history') {
       fetchHistory();
@@ -1369,6 +1410,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                           placeholder="Search pickup location..."
                           value={pickupLoc}
                           onChange={(e) => handleLocationInputChange(e.target.value, 'find_pickup', setPickupLoc, setPickupSuggestions)}
+                          onFocus={(e) => fetchSuggestions(e.target.value, setPickupSuggestions)}
                           required
                         />
                       </div>
@@ -1388,7 +1430,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                                 setPickupSuggestions([]);
                               }}
                             >
-                              {suggestion.address}
+                              {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
                             </li>
                           ))}
                         </ul>
@@ -1418,6 +1460,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                           placeholder="Search destination location..."
                           value={destLoc}
                           onChange={(e) => handleLocationInputChange(e.target.value, 'find_dest', setDestLoc, setDestSuggestions)}
+                          onFocus={(e) => fetchSuggestions(e.target.value, setDestSuggestions)}
                           required
                         />
                       </div>
@@ -1437,7 +1480,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                                 setDestSuggestions([]);
                               }}
                             >
-                              {suggestion.address}
+                              {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
                             </li>
                           ))}
                         </ul>
@@ -1540,6 +1583,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                           placeholder="Search pickup location..."
                           value={offerPickup}
                           onChange={(e) => handleLocationInputChange(e.target.value, 'offer_pickup', setOfferPickup, setOfferPickupSuggestions)}
+                          onFocus={(e) => fetchSuggestions(e.target.value, setOfferPickupSuggestions)}
                           required
                         />
                       </div>
@@ -1559,7 +1603,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                                 setOfferPickupSuggestions([]);
                               }}
                             >
-                              {suggestion.address}
+                              {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
                             </li>
                           ))}
                         </ul>
@@ -1589,6 +1633,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                           placeholder="Search destination location..."
                           value={offerDest}
                           onChange={(e) => handleLocationInputChange(e.target.value, 'offer_dest', setOfferDest, setOfferDestSuggestions)}
+                          onFocus={(e) => fetchSuggestions(e.target.value, setOfferDestSuggestions)}
                           required
                         />
                       </div>
@@ -1608,7 +1653,7 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                                 setOfferDestSuggestions([]);
                               }}
                             >
-                              {suggestion.address}
+                              {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
                             </li>
                           ))}
                         </ul>
