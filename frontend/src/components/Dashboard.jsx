@@ -547,6 +547,36 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
   };
 
   // Submit Find Ride (requires explicit selected Nominatim suggestions & phone validation)
+  const resolveAddressCoords = async (address) => {
+    if (!address.trim()) return null;
+    try {
+      const trimmed = address.trim();
+      if (nominatimCache[trimmed] && nominatimCache[trimmed].length > 0) {
+        return nominatimCache[trimmed][0];
+      }
+
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(trimmed)}`;
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'EnterpriseCarpoolingHackathon/1.0 (dhwanidalsania@example.com)'
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.length > 0) {
+          return {
+            address: data[0].display_name,
+            lat: parseFloat(data[0].lat),
+            lng: parseFloat(data[0].lon)
+          };
+        }
+      }
+    } catch (err) {
+      console.error('Nominatim resolution error:', err);
+    }
+    return null;
+  };
+
   // Submit Find Ride (requires explicit selected Nominatim suggestions & phone verification)
   const handleFindSubmit = async (e) => {
     e.preventDefault();
@@ -555,13 +585,26 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       return;
     }
 
-    if (!pickupCoords || pickupCoords.address !== pickupLoc) {
-      alert('Please select a valid pickup location from the suggestions dropdown list.');
-      return;
+    let resolvedPickup = pickupCoords;
+    if (!resolvedPickup || resolvedPickup.address.trim() !== pickupLoc.trim()) {
+      resolvedPickup = await resolveAddressCoords(pickupLoc);
+      if (!resolvedPickup) {
+        alert('Could not resolve pickup location. Please select a valid location from the suggestions.');
+        return;
+      }
+      setPickupCoords(resolvedPickup);
+      setPickupLoc(resolvedPickup.address);
     }
-    if (!destCoords || destCoords.address !== destLoc) {
-      alert('Please select a valid destination location from the suggestions dropdown list.');
-      return;
+
+    let resolvedDest = destCoords;
+    if (!resolvedDest || resolvedDest.address.trim() !== destLoc.trim()) {
+      resolvedDest = await resolveAddressCoords(destLoc);
+      if (!resolvedDest) {
+        alert('Could not resolve destination location. Please select a valid location from the suggestions.');
+        return;
+      }
+      setDestCoords(resolvedDest);
+      setDestLoc(resolvedDest.address);
     }
     
     // Auto-update profile in database if changed
@@ -575,12 +618,12 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
     onNavigate('route-confirmation', {
       type: 'find',
-      pickupLocation: pickupCoords.address,
-      pickupLat: pickupCoords.lat,
-      pickupLng: pickupCoords.lng,
-      destination: destCoords.address,
-      destLat: destCoords.lat,
-      destLng: destCoords.lng,
+      pickupLocation: resolvedPickup.address,
+      pickupLat: resolvedPickup.lat,
+      pickupLng: resolvedPickup.lng,
+      destination: resolvedDest.address,
+      destLat: resolvedDest.lat,
+      destLng: resolvedDest.lng,
       date: rideDate,
       time: rideTime,
       seats: numSeats
@@ -602,13 +645,26 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       return;
     }
 
-    if (!offerPickupCoords || offerPickupCoords.address !== offerPickup) {
-      alert('Please select a valid pickup location from the suggestions dropdown list.');
-      return;
+    let resolvedPickup = offerPickupCoords;
+    if (!resolvedPickup || resolvedPickup.address.trim() !== offerPickup.trim()) {
+      resolvedPickup = await resolveAddressCoords(offerPickup);
+      if (!resolvedPickup) {
+        alert('Could not resolve pickup location. Please select a valid location from the suggestions.');
+        return;
+      }
+      setOfferPickupCoords(resolvedPickup);
+      setOfferPickup(resolvedPickup.address);
     }
-    if (!offerDestCoords || offerDestCoords.address !== offerDest) {
-      alert('Please select a valid destination location from the suggestions dropdown list.');
-      return;
+
+    let resolvedDest = offerDestCoords;
+    if (!resolvedDest || resolvedDest.address.trim() !== offerDest.trim()) {
+      resolvedDest = await resolveAddressCoords(offerDest);
+      if (!resolvedDest) {
+        alert('Could not resolve destination location. Please select a valid location from the suggestions.');
+        return;
+      }
+      setOfferDestCoords(resolvedDest);
+      setOfferDest(resolvedDest.address);
     }
 
     // Auto-update profile in database if changed
@@ -623,12 +679,12 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     const selectedCar = userVehicles.find(v => v.id === selectedVehicle);
     onNavigate('route-confirmation', {
       type: 'offer',
-      pickupLocation: offerPickupCoords.address,
-      pickupLat: offerPickupCoords.lat,
-      pickupLng: offerPickupCoords.lng,
-      destination: offerDestCoords.address,
-      destLat: offerDestCoords.lat,
-      destLng: offerDestCoords.lng,
+      pickupLocation: resolvedPickup.address,
+      pickupLat: resolvedPickup.lat,
+      pickupLng: resolvedPickup.lng,
+      destination: resolvedDest.address,
+      destLat: resolvedDest.lat,
+      destLng: resolvedDest.lng,
       dateTime: offerDateTime,
       seats: offerSeats,
       vehicleId: selectedVehicle,
