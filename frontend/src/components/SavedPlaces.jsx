@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Trash2, Edit2, Plus, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, MapPin, Trash2, Edit2, Loader2, Check, RefreshCw } from 'lucide-react';
 
 export const SavedPlaces = ({ onBack, token }) => {
   const [savedPlaces, setSavedPlaces] = useState([]);
@@ -165,36 +165,61 @@ export const SavedPlaces = ({ onBack, token }) => {
     setErrorMsg('');
   };
 
+  const PlaceSkeleton = () => (
+    <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-input)', padding: '16px', display: 'flex', gap: '16px', alignItems: 'center' }}>
+      <div className="shimmer-bg" style={{ width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0 }}></div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+        <div className="shimmer-bg" style={{ width: '40%', height: '12px', borderRadius: '4px' }}></div>
+        <div className="shimmer-bg" style={{ width: '80%', height: '10px', borderRadius: '4px' }}></div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="dashboard-container" style={{ maxWidth: '1000px', gap: '24px' }}>
+    <div className="dashboard-container animate-fade-in" style={{ maxWidth: '1000px', padding: '24px' }}>
+      <style>{`
+        .saved-places-grid {
+          display: grid;
+          grid-template-columns: 1fr 1.3fr;
+          gap: 32px;
+          align-items: start;
+          margin-top: 16px;
+        }
+        @media (max-width: 768px) {
+          .saved-places-grid {
+            grid-template-columns: 1fr;
+            gap: 24px;
+          }
+        }
+      `}</style>
       
-      <button className="back-header" onClick={onBack}>
+      <button className="back-header" onClick={onBack} style={{ marginBottom: '16px' }}>
         <ArrowLeft size={16} />
-        <span>Settings</span>
+        <span className="text-page-title">Saved Places</span>
       </button>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>Saved Places</h2>
-      </div>
-
       {successMsg && (
-        <div className="feedback-alert feedback-success">
+        <div className="feedback-alert feedback-success" style={{ padding: '16px', marginBottom: '16px' }}>
           <Check size={16} />
-          <span>{successMsg}</span>
+          <span className="text-body" style={{ color: '#34d399' }}>{successMsg}</span>
         </div>
       )}
 
       {errorMsg && (
-        <div className="feedback-alert feedback-error">
-          <span>{errorMsg}</span>
+        <div className="feedback-alert feedback-error" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', marginBottom: '16px' }}>
+          <span className="text-body" style={{ color: '#f87171' }}>{errorMsg}</span>
+          <button className="btn-retry" onClick={fetchSavedPlaces}>
+            <RefreshCw size={12} />
+            <span>Retry</span>
+          </button>
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '28px', alignItems: 'start', marginTop: '16px' }}>
+      <div className="saved-places-grid">
         
         {/* Left Side: Form */}
-        <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginTop: 0, marginBottom: '16px' }}>
+        <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-default)', borderRadius: '12px', padding: '24px' }}>
+          <h3 className="text-card-title" style={{ marginTop: 0, marginBottom: '16px' }}>
             {editingId ? 'Edit Saved Place' : 'Add New Saved Place'}
           </h3>
 
@@ -204,7 +229,7 @@ export const SavedPlaces = ({ onBack, token }) => {
               <label className="form-label">Place Label</label>
               <input
                 type="text"
-                className="input-field"
+                className="input-field text-body"
                 placeholder="e.g. Home, Work, Gym"
                 value={label}
                 onChange={e => setLabel(e.target.value)}
@@ -218,7 +243,7 @@ export const SavedPlaces = ({ onBack, token }) => {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input
                   type="text"
-                  className="input-field"
+                  className="input-field text-body"
                   placeholder="Street, City, State"
                   value={address}
                   onChange={e => setAddress(e.target.value)}
@@ -228,7 +253,7 @@ export const SavedPlaces = ({ onBack, token }) => {
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  style={{ height: '44px', padding: '0 12px', fontSize: '12px', fontWeight: '600', flexShrink: 0 }}
+                  style={{ height: '44px', padding: '0 16px', fontSize: '12px', fontWeight: '600', flexShrink: 0, borderRadius: '8px' }}
                   onClick={handleGeocode}
                   disabled={isGeocoding || !address.trim()}
                 >
@@ -243,7 +268,7 @@ export const SavedPlaces = ({ onBack, token }) => {
                 <input
                   type="number"
                   step="0.000001"
-                  className="input-field"
+                  className="input-field text-body"
                   placeholder="e.g. 23.0225"
                   value={lat}
                   onChange={e => setLat(e.target.value)}
@@ -257,7 +282,7 @@ export const SavedPlaces = ({ onBack, token }) => {
                 <input
                   type="number"
                   step="0.000001"
-                  className="input-field"
+                  className="input-field text-body"
                   placeholder="e.g. 72.5714"
                   value={lng}
                   onChange={e => setLng(e.target.value)}
@@ -267,7 +292,7 @@ export const SavedPlaces = ({ onBack, token }) => {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
               <button
                 type="submit"
                 className="btn btn-primary"
@@ -280,7 +305,7 @@ export const SavedPlaces = ({ onBack, token }) => {
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  style={{ height: '44px', padding: '0 16px', fontSize: '13px' }}
+                  style={{ height: '44px', padding: '0 16px', fontSize: '13px', borderRadius: '8px' }}
                   onClick={cancelEdit}
                 >
                   Cancel
@@ -293,59 +318,62 @@ export const SavedPlaces = ({ onBack, token }) => {
 
         {/* Right Side: List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginTop: 0, marginBottom: '4px' }}>
+          <h3 className="text-card-title" style={{ marginTop: 0, marginBottom: '4px' }}>
             Your Saved Places
           </h3>
 
           {loading && savedPlaces.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Loading saved places...</div>
+            <>
+              <PlaceSkeleton />
+              <PlaceSkeleton />
+            </>
           ) : savedPlaces.length === 0 ? (
             <div style={{
-              padding: '36px',
+              padding: '32px 24px',
               backgroundColor: 'rgba(11, 15, 25, 0.4)',
-              border: '1px dashed var(--border-color)',
+              border: '1px dashed var(--border-default)',
               borderRadius: '12px',
               textAlign: 'center',
-              color: 'var(--text-muted)',
-              fontSize: '13px'
+              color: 'var(--text-label)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '16px'
             }}>
-              No saved places yet. Add one using the form on the left.
+              <MapPin size={32} style={{ color: 'var(--text-label)' }} />
+              <div>
+                <h4 className="text-card-title" style={{ color: 'var(--text-primary)', marginBottom: '4px' }}>No saved places</h4>
+                <p className="text-meta">Save key locations like Home and Work to quickly book or offer rides.</p>
+              </div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {savedPlaces.map(place => (
                 <div
                   key={place.id}
-                  style={{
-                    backgroundColor: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    padding: '16px',
-                    borderRadius: '10px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: '16px'
-                  }}
+                  className="saved-place-row"
+                  style={{ padding: '16px 24px' }}
                 >
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', overflow: 'hidden', flex: 1 }}>
                     <div style={{
                       width: '36px',
                       height: '36px',
                       borderRadius: '50%',
-                      backgroundColor: 'rgba(15, 169, 88, 0.1)',
-                      color: 'var(--color-brand)',
+                      backgroundColor: 'rgba(13, 148, 136, 0.1)',
+                      color: 'var(--accent-teal)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       flexShrink: 0,
-                      marginTop: '2px'
+                      marginTop: '2px',
+                      border: '1px solid var(--border-default)'
                     }}>
                       <MapPin size={18} />
                     </div>
-                    <div style={{ overflow: 'hidden' }}>
-                      <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>{place.label}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place.address}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    <div style={{ overflow: 'hidden', flex: 1 }}>
+                      <div className="text-card-title" style={{ fontSize: '15px' }}>{place.label}</div>
+                      <div className="text-meta" style={{ color: 'var(--text-secondary)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place.address}</div>
+                      <div className="text-meta" style={{ fontSize: '11px', marginTop: '4px' }}>
                         Lat: {parseFloat(place.lat).toFixed(5)} • Lng: {parseFloat(place.lng).toFixed(5)}
                       </div>
                     </div>
@@ -354,7 +382,7 @@ export const SavedPlaces = ({ onBack, token }) => {
                   <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                     <button
                       className="btn btn-secondary"
-                      style={{ height: '32px', width: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      style={{ height: '32px', width: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
                       onClick={() => startEdit(place)}
                       title="Edit location"
                     >
@@ -362,7 +390,7 @@ export const SavedPlaces = ({ onBack, token }) => {
                     </button>
                     <button
                       className="btn btn-secondary"
-                      style={{ height: '32px', width: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderColor: 'rgba(239,68,68,0.2)' }}
+                      style={{ height: '32px', width: '32px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderColor: 'rgba(239,68,68,0.2)', borderRadius: '8px' }}
                       onClick={() => handleDelete(place.id)}
                       title="Delete location"
                     >

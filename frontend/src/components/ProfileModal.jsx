@@ -22,6 +22,7 @@ export const ProfileModal = ({ isOpen, onClose }) => {
         setValidationError('Image size must be less than 2MB.');
         return;
       }
+      setValidationError('');
       const reader = new FileReader();
       reader.onloadend = () => {
         setPhotoBase64(reader.result);
@@ -40,13 +41,18 @@ export const ProfileModal = ({ isOpen, onClose }) => {
     setValidationError('');
     setError(null);
 
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       setValidationError('Name cannot be empty.');
+      return;
+    }
+    if (trimmedName.length < 3) {
+      setValidationError('Name must be at least 3 characters long.');
       return;
     }
 
     try {
-      await updateProfile(name, photoBase64);
+      await updateProfile(trimmedName, photoBase64);
       setSuccess('Profile updated successfully!');
       setTimeout(() => {
         setSuccess('');

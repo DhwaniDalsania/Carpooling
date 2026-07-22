@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { ArrowLeft, User, MoreVertical, RefreshCw, Check, Loader2, DollarSign } from 'lucide-react';
+import { ArrowLeft, User, MoreVertical, RefreshCw, Check, Loader2, DollarSign, HelpCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Header from './Header';
-import Sidebar from './Sidebar';
 
 export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate }) => {
   const { token } = useAuth();
@@ -12,6 +11,7 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
   const [isBookingId, setIsBookingId] = useState(null); // stores active booking ride ID
   const [bookingSuccess, setBookingSuccess] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   
   // Extract results and query parameters from routeState
   const matchingRides = routeState?.rides || [];
@@ -38,10 +38,10 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to book the ride.');
+        throw new Error(data.message || 'Failed to confirm booking.');
       }
 
-      setBookingSuccess('Booking confirmed! Redirecting to My Trips...');
+      setBookingSuccess('Booking confirmed! Redirecting to your active trips...');
       
       // Navigate to My Trips screen (dashboard screen, trips tab) after 1.5s
       setTimeout(() => {
@@ -51,7 +51,7 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
 
     } catch (err) {
       console.error('[bookingError]', err);
-      setErrorMsg(err.message || 'Booking failed. Please try again.');
+      setErrorMsg(err.message || 'We could not book the ride. Please check your balance and try again.');
     } finally {
       setIsBookingId(null);
     }
@@ -60,6 +60,7 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
   // Re-fetch / Refresh matching rides list
   const handleRefresh = async () => {
     setErrorMsg('');
+    setIsLoading(true);
     try {
       const response = await fetch(
         `/api/rides/search?pickupLat=${query.pickupLat}&pickupLng=${query.pickupLng}&destLat=${query.destLat}&destLng=${query.destLng}&seats=${query.seats}&date=${query.date}`,
@@ -72,7 +73,7 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.message || 'Refresh failed.');
+        throw new Error(data.message || 'Search request failed.');
       }
 
       // Refresh routeState parameters
@@ -82,7 +83,9 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
       });
     } catch (err) {
       console.error('[refreshRidesError]', err);
-      setErrorMsg('Failed to reload matching rides.');
+      setErrorMsg('Unable to retrieve matching rides. Please check your connection.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -103,6 +106,35 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
     }
   };
 
+  const RideSkeleton = () => (
+    <div style={{
+      backgroundColor: 'var(--bg-card)',
+      border: '1px solid var(--border-default)',
+      borderRadius: 'var(--radius-card)',
+      padding: '24px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '16px'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
+        <div className="shimmer-bg" style={{ width: '48px', height: '48px', borderRadius: '50%', flexShrink: 0 }}></div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+          <div className="shimmer-bg" style={{ width: '40%', height: '14px', borderRadius: '4px' }}></div>
+          <div className="shimmer-bg" style={{ width: '70%', height: '11px', borderRadius: '4px' }}></div>
+          <div className="shimmer-bg" style={{ width: '50%', height: '9px', borderRadius: '4px' }}></div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
+          <div className="shimmer-bg" style={{ width: '80px', height: '10px', borderRadius: '4px' }}></div>
+          <div className="shimmer-bg" style={{ width: '100px', height: '12px', borderRadius: '4px' }}></div>
+        </div>
+        <div className="shimmer-bg" style={{ width: '88px', height: '42px', borderRadius: '8px' }}></div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="app-container animate-fade-in">
       {/* Header Bar */}
@@ -115,67 +147,100 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
 
       {/* Main Layout wrapper */}
       <div className="app-body-wrapper">
-        <Sidebar label="Dashboard" />
-
         <main className="app-content-area">
-          <div className="dashboard-container" style={{ maxWidth: '820px' }}>
+          <div className="dashboard-container" style={{ maxWidth: '820px', padding: '24px' }}>
             
-            {/* Back link "< Available Ride" */}
-            <button className="back-header" onClick={onBack}>
+            {/* Back link */}
+            <button className="back-header" onClick={onBack} style={{ marginBottom: '16px' }}>
               <ArrowLeft size={16} />
-              <span>Available Ride</span>
+              <span className="text-page-title">Available Rides</span>
             </button>
 
-            {/* Error Message display */}
+            {/* Error Message display with retry */}
             {errorMsg && (
-              <div className="feedback-alert feedback-error">
-                <span>{errorMsg}</span>
+              <div className="feedback-alert feedback-error" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', marginBottom: '16px' }}>
+                <span className="text-body" style={{ color: '#f87171' }}>{errorMsg}</span>
+                <button className="btn-retry" onClick={handleRefresh}>
+                  <RefreshCw size={12} />
+                  <span>Retry</span>
+                </button>
               </div>
             )}
 
             {/* Success Message display */}
             {bookingSuccess && (
-              <div className="feedback-alert feedback-success">
+              <div className="feedback-alert feedback-success" style={{ padding: '16px', marginBottom: '16px' }}>
                 <Check size={18} />
-                <span>{bookingSuccess}</span>
+                <span className="text-body" style={{ color: '#34d399' }}>{bookingSuccess}</span>
               </div>
             )}
 
             {/* Rides Listing container */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '8px' }}>
-              {matchingRides.length === 0 ? (
+              {isLoading ? (
+                <>
+                  <RideSkeleton />
+                  <RideSkeleton />
+                  <RideSkeleton />
+                </>
+              ) : matchingRides.length === 0 ? (
                 <div style={{ 
                   textAlign: 'center', 
-                  padding: '40px 20px', 
+                  padding: '32px 24px', 
                   backgroundColor: 'var(--bg-input)', 
-                  border: '1px dashed var(--border-color)', 
-                  borderRadius: '12px',
-                  color: 'var(--text-secondary)'
+                  border: '1px dashed var(--border-default)', 
+                  borderRadius: 'var(--radius-card)',
+                  color: 'var(--text-label)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '16px'
                 }}>
-                  No active rides found matching your coordinates. Click Refresh below to check again or post an offer.
+                  <HelpCircle size={32} style={{ color: 'var(--text-label)' }} />
+                  <div>
+                    <h3 className="text-card-title" style={{ color: 'var(--text-primary)', marginBottom: '4px' }}>No matching carpools found</h3>
+                    <p className="text-meta">No drivers are currently matching your route coordinates. You can post a ride offer yourself to let others join you.</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '16px' }}>
+                    <button 
+                      className="btn btn-secondary" 
+                      onClick={handleRefresh}
+                      style={{ height: '36px', padding: '0 16px', fontSize: '13px' }}
+                    >
+                      Check again
+                    </button>
+                    <button 
+                      className="btn btn-primary" 
+                      onClick={() => onNavigate('dashboard', { activeTab: 'dashboard', type: 'offer' })}
+                      style={{ height: '36px', padding: '0 16px', fontSize: '13px' }}
+                    >
+                      Offer a ride
+                    </button>
+                  </div>
                 </div>
               ) : (
                 matchingRides.map((ride) => (
                   <div 
                     key={ride.id} 
                     style={{ 
-                      backgroundColor: 'var(--bg-input)', 
-                      border: '1px solid var(--border-color)', 
-                      borderRadius: 'var(--radius-lg)', 
+                      backgroundColor: 'var(--bg-card)', 
+                      border: '1px solid var(--border-default)', 
+                      borderRadius: 'var(--radius-card)', 
                       padding: '24px', 
                       display: 'flex', 
                       justifyContent: 'space-between', 
                       alignItems: 'center', 
                       position: 'relative',
-                      boxShadow: 'var(--shadow-sm)'
+                      boxShadow: 'var(--shadow-card)',
+                      gap: '16px'
                     }}
                   >
                     
                     {/* Far-right 3-dots actions menu button */}
                     <button style={{ 
                       position: 'absolute', 
-                      top: '20px', 
-                      right: '20px', 
+                      top: '24px', 
+                      right: '24px', 
                       background: 'none', 
                       border: 'none', 
                       color: 'var(--text-muted)', 
@@ -185,34 +250,40 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
                     </button>
 
                     {/* Driver details (left) */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, overflow: 'hidden' }}>
                       <div style={{ 
                         width: '48px', 
                         height: '48px', 
                         borderRadius: '50%', 
                         backgroundColor: 'var(--bg-card)', 
-                        border: '1px solid var(--border-color)',
+                        border: '1px solid var(--border-default)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         color: 'var(--text-secondary)',
-                        overflow: 'hidden'
+                        overflow: 'hidden',
+                        flexShrink: 0
                       }}>
                         {ride.driver?.photoUrl ? (
-                          <img src={ride.driver.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <img 
+                            src={ride.driver.photoUrl} 
+                            alt="" 
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                            onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E"; }}
+                          />
                         ) : (
                           <User size={24} />
                         )}
                       </div>
-                      <div>
-                        <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>
-                          {ride.driver?.name || 'Carpool Driver'}
+                      <div style={{ overflow: 'hidden' }}>
+                        <div className="text-card-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {ride.driver?.name || 'Acme Employee'}
                         </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        <div className="text-body" style={{ color: 'var(--text-label)', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {ride.pickupAddress} to {ride.destAddress}
                         </div>
                         {ride.vehicle && (
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          <div className="text-meta" style={{ marginTop: '4px' }}>
                             🚘 {ride.vehicle.model} ({ride.vehicle.registrationNumber})
                           </div>
                         )}
@@ -220,13 +291,13 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
                     </div>
 
                     {/* Pricing, schedule and Book button (right) */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '24px', paddingRight: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '24px', paddingRight: '16px', flexShrink: 0 }}>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        <div className="text-meta" style={{ color: 'var(--text-label)' }}>
                           {formatRideDate(ride.datetime)}
                         </div>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', marginTop: '4px' }}>
-                          ₹ {ride.farePerSeat} <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '400' }}>/ Seat {ride.availableSeats} Available</span>
+                        <div className="text-body" style={{ fontWeight: '600', marginTop: '4px' }}>
+                          ₹ {ride.farePerSeat} <span className="text-meta" style={{ fontWeight: '400' }}>/ seat ({ride.availableSeats} left)</span>
                         </div>
                       </div>
 
@@ -234,12 +305,15 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
                         className="btn btn-primary" 
                         style={{ height: '42px', padding: '0 20px', fontSize: '13px', borderRadius: '8px' }}
                         onClick={() => handleBookNow(ride.id)}
-                        disabled={isBookingId !== null}
+                        disabled={isBookingId !== null || isLoading}
                       >
                         {isBookingId === ride.id ? (
-                          <Loader2 className="animate-spin" size={14} />
+                          <>
+                            <Loader2 className="animate-spin" size={14} style={{ marginRight: '6px' }} />
+                            <span>Booking...</span>
+                          </>
                         ) : (
-                          <span>Book Now</span>
+                          <span>Book this ride</span>
                         )}
                       </button>
                     </div>
@@ -252,11 +326,12 @@ export const AvailableRides = ({ routeState, onBack, onProfileClick, onNavigate 
             {/* Refresh button at bottom */}
             <button 
               className="btn btn-secondary" 
-              style={{ width: '100%', marginTop: '8px', display: 'flex', gap: '8px', justifyContent: 'center' }}
+              style={{ width: '100%', marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'center' }}
               onClick={handleRefresh}
+              disabled={isLoading}
             >
-              <RefreshCw size={16} />
-              <span>Refresh</span>
+              {isLoading ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+              <span>Check for rides</span>
             </button>
 
           </div>

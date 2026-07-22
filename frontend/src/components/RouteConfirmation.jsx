@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Search, Clock, MapPin, Check, Loader2, Compass, ChevronDown, Plus, Trash2, Navigation } from 'lucide-react';
+import { ArrowLeft, Search, Clock, MapPin, Check, Loader2, ChevronDown, Plus, Trash2, Navigation, RefreshCw } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { useAuth } from '../context/AuthContext';
 import Header from './Header';
-import Sidebar from './Sidebar';
 
 // Custom Leaflet Icons
 const startIcon = L.divIcon({
@@ -46,7 +45,7 @@ function MapRecenter({ startCoords, destCoords, stopCoords }) {
 export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNavigate }) => {
   const { user, token } = useAuth();
   
-  const [currentHeaderTab, setCurrentHeaderTab] = useState('dashboard');
+  const [currentHeaderTab] = useState('dashboard');
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmSuccess, setConfirmSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -116,7 +115,7 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
     };
   };
 
-  // Perform OSRM route calculations (runs when pickup/destination/stops change)
+  // Perform OSRM route calculations
   const calculateRoute = async (pCoords, dCoords, resolvedStops) => {
     if (!pCoords || !dCoords) return;
     setIsGeocoding(true);
@@ -154,42 +153,44 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
     }
   };
 
-  // Initial geocoding run on mount
+  // Run initial geocoding on mount
+  const runInitialGeocode = async () => {
+    if (!pickup || !destination) {
+      setErrorMsg('Pickup and destination locations are missing.');
+      return;
+    }
+
+    const userAgentHeader = { 'User-Agent': 'EnterpriseCarpoolingHackathon/1.0 (dhwanidalsania@example.com)' };
+    let pCoords = startCoords;
+    let dCoords = destCoords;
+
+    setIsGeocoding(true);
+    setErrorMsg('');
+    try {
+      if (!pCoords) {
+        const pRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(pickup)}`, { headers: userAgentHeader });
+        const pData = await pRes.json();
+        if (!pData || pData.length === 0) throw new Error(`Could not find coordinate for pickup: "${pickup}".`);
+        pCoords = [parseFloat(pData[0].lat), parseFloat(pData[0].lon)];
+        setStartCoords(pCoords);
+      }
+      if (!dCoords) {
+        const dRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(destination)}`, { headers: userAgentHeader });
+        const dData = await dRes.json();
+        if (!dData || dData.length === 0) throw new Error(`Could not find coordinate for destination: "${destination}".`);
+        dCoords = [parseFloat(dData[0].lat), parseFloat(dData[0].lon)];
+        setDestCoords(dCoords);
+      }
+      await calculateRoute(pCoords, dCoords, []);
+    } catch (err) {
+      console.error('[Geocode/Route Error]', err);
+      setErrorMsg(err.message || 'We could not calculate the route coordinates. Please verify your address details.');
+      setIsGeocoding(false);
+    }
+  };
+
   useEffect(() => {
-    const run = async () => {
-      if (!pickup || !destination) {
-        setErrorMsg('Pickup and destination locations are missing.');
-        return;
-      }
-
-      const userAgentHeader = { 'User-Agent': 'EnterpriseCarpoolingHackathon/1.0 (dhwanidalsania@example.com)' };
-      let pCoords = startCoords;
-      let dCoords = destCoords;
-
-      setIsGeocoding(true);
-      try {
-        if (!pCoords) {
-          const pRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(pickup)}`, { headers: userAgentHeader });
-          const pData = await pRes.json();
-          if (!pData || pData.length === 0) throw new Error(`Could not find coordinate for pickup: "${pickup}".`);
-          pCoords = [parseFloat(pData[0].lat), parseFloat(pData[0].lon)];
-          setStartCoords(pCoords);
-        }
-        if (!dCoords) {
-          const dRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(destination)}`, { headers: userAgentHeader });
-          const dData = await dRes.json();
-          if (!dData || dData.length === 0) throw new Error(`Could not find coordinate for destination: "${destination}".`);
-          dCoords = [parseFloat(dData[0].lat), parseFloat(dData[0].lon)];
-          setDestCoords(dCoords);
-        }
-        await calculateRoute(pCoords, dCoords, []);
-      } catch (err) {
-        console.error('[Geocode/Route Error]', err);
-        setErrorMsg(err.message || 'An error occurred during geocoding.');
-        setIsGeocoding(false);
-      }
-    };
-    run();
+    runInitialGeocode();
   }, [pickup, destination]);
 
   // Geocode and add a stop
@@ -332,6 +333,46 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
 
   return (
     <div className="app-container animate-fade-in">
+      <style>{`
+        .route-grid {
+          display: grid;
+          grid-template-columns: 400px 1fr;
+          min-height: 580px;
+        }
+        .route-left-panel {
+          padding: 24px;
+          border-right: 1px solid var(--border-default);
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          overflow-y: auto;
+          max-height: 620px;
+        }
+        .route-right-panel {
+          background-color: #090d16;
+          padding: 24px;
+          display: flex;
+          flex-direction: column;
+          position: relative;
+          overflow: hidden;
+        }
+        @media (max-width: 768px) {
+          .route-grid {
+            grid-template-columns: 1fr;
+          }
+          .route-left-panel {
+            order: 2;
+            border-right: none !important;
+            border-top: 1px solid var(--border-default) !important;
+            max-height: none !important;
+          }
+          .route-right-panel {
+            order: 1;
+            height: 350px;
+          }
+        }
+      `}</style>
+
       <Header
         onProfileClick={onProfileClick}
         currentTab={currentHeaderTab}
@@ -340,25 +381,27 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
       />
 
       <div className="app-body-wrapper">
-        <Sidebar label="Carpooling" />
-
         <main className="app-content-area">
           <div className="dashboard-container" style={{ maxWidth: '1060px', padding: '0px', overflow: 'hidden' }}>
             
-            <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', minHeight: '580px' }}>
+            <div className="route-grid">
               
               {/* Left Form Panel */}
-              <div style={{ padding: '28px', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', overflowY: 'auto', maxHeight: '620px' }}>
+              <div className="route-left-panel">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   
                   <button className="back-header" onClick={onBack} style={{ marginBottom: '8px' }}>
                     <ArrowLeft size={16} />
-                    <span>Trip</span>
+                    <span className="text-page-title">Route Confirmation</span>
                   </button>
 
                   {errorMsg && (
-                    <div className="feedback-alert feedback-error">
-                      <span>{errorMsg}</span>
+                    <div className="feedback-alert feedback-error" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="text-body" style={{ color: '#f87171' }}>{errorMsg}</span>
+                      <button className="btn-retry" onClick={runInitialGeocode}>
+                        <RefreshCw size={12} />
+                        <span>Retry</span>
+                      </button>
                     </div>
                   )}
 
@@ -369,33 +412,33 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                       <div className="input-icon-left">
                         {isGeocoding ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}
                       </div>
-                      <input type="text" className="input-field" value={pickup} readOnly style={{ cursor: 'default' }} />
+                      <input type="text" className="input-field text-body" value={pickup} readOnly style={{ cursor: 'default' }} />
                     </div>
                   </div>
 
                   {/* ── Intermediate Stops Card — Driver Only ────────────────── */}
                   {rideType === 'offer' && (
-                    <div style={{ backgroundColor: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '12px', padding: '16px' }}>
+                    <div style={{ backgroundColor: 'rgba(13,148,136,0.04)', border: '1px solid rgba(13,148,136,0.2)', borderRadius: '12px', padding: '16px' }}>
                       
                       {/* Section header */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Navigation size={15} style={{ color: 'var(--color-brand)' }} />
-                          <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>Add Stops Along the Way</span>
+                          <Navigation size={15} style={{ color: 'var(--accent-teal)' }} />
+                          <span className="text-card-title" style={{ fontSize: '13px', margin: 0 }}>Add Stops Along the Way</span>
                         </div>
                         {stops.length > 0 && (
-                          <span style={{ fontSize: '10px', backgroundColor: 'rgba(245,158,11,0.2)', color: '#f59e0b', padding: '3px 8px', borderRadius: '20px', fontWeight: '700' }}>
-                            +{stops.length * 10}% fare surcharge
+                          <span className="text-meta" style={{ backgroundColor: 'rgba(245,158,11,0.2)', color: '#f59e0b', padding: '3px 8px', borderRadius: '20px', fontWeight: '700' }}>
+                            +{stops.length * 10}% fare
                           </span>
                         )}
                       </div>
 
-                      {/* Route visualizer: Pickup → Stop 1 → Stop 2 → Dest */}
+                      {/* Route visualizer */}
                       <div style={{ position: 'relative', marginBottom: '12px' }}>
                         {/* Pickup dot */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
                           <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#3b82f6', flexShrink: 0 }} />
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pickup}</span>
+                          <span className="text-meta" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pickup}</span>
                         </div>
                         {/* Connector + Stops */}
                         {stops.map((stop, idx) => (
@@ -405,9 +448,9 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                               <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: '#f59e0b', color: 'white', fontSize: '9px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{idx + 1}</div>
                               <div style={{ width: '1px', height: '10px', backgroundColor: '#f59e0b', opacity: 0.5 }} />
                             </div>
-                            <span style={{ flex: 1, fontSize: '11px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stop.address}</span>
+                            <span className="text-meta" style={{ flex: 1, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stop.address}</span>
                             {legsBreakdown[idx] && (
-                              <span style={{ fontSize: '10px', color: 'var(--text-muted)', flexShrink: 0 }}>{legsBreakdown[idx].distanceKm} km</span>
+                              <span className="text-meta" style={{ flexShrink: 0 }}>{legsBreakdown[idx].distanceKm} km</span>
                             )}
                             <button onClick={() => handleRemoveStop(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px', flexShrink: 0, lineHeight: 1 }}>
                               <Trash2 size={13} />
@@ -417,7 +460,7 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                         {/* Destination dot */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#0d9488', flexShrink: 0 }} />
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{destination}</span>
+                          <span className="text-meta" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{destination}</span>
                         </div>
                       </div>
 
@@ -427,9 +470,9 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                           <div style={{ position: 'relative', flex: 1 }}>
                             <input
                               type="text"
-                              className="input-field"
+                              className="input-field text-body"
                               style={{ paddingLeft: '12px', width: '100%', fontSize: '12px', height: '40px' }}
-                              placeholder="Type a stop address & press Enter…"
+                              placeholder="Type a stop & press Enter..."
                               value={stopInput}
                               onChange={e => setStopInput(e.target.value)}
                               onKeyDown={e => e.key === 'Enter' && handleAddStop()}
@@ -437,7 +480,7 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                           </div>
                           <button
                             className="btn btn-primary"
-                            style={{ height: '40px', width: '40px', padding: 0, flexShrink: 0, minWidth: '40px' }}
+                            style={{ height: '40px', width: '40px', padding: 0, flexShrink: 0, minWidth: '40px', borderRadius: '8px' }}
                             onClick={handleAddStop}
                             disabled={isGeocodingStop || !stopInput.trim()}
                             title="Add stop"
@@ -446,10 +489,10 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                           </button>
                         </div>
                       ) : (
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>Maximum 4 stops reached</div>
+                        <div className="text-meta" style={{ textAlign: 'center' }}>Maximum 4 stops reached</div>
                       )}
 
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <div className="text-meta" style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}>
                         <span>💡</span>
                         <span>Each stop adds +10% to the per-seat fare. Up to 4 stops allowed.</span>
                       </div>
@@ -463,7 +506,7 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                       <div className="input-icon-left">
                         {isGeocoding ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}
                       </div>
-                      <input type="text" className="input-field" value={destination} readOnly style={{ cursor: 'default' }} />
+                      <input type="text" className="input-field text-body" value={destination} readOnly style={{ cursor: 'default' }} />
                     </div>
                   </div>
 
@@ -489,15 +532,15 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                         </div>
                         <input
                           type="number"
-                          className="input-field"
+                          className="input-field text-body"
                           style={{ paddingLeft: '32px' }}
                           value={driverFare}
                           onChange={(e) => setDriverFare(Math.max(0, parseInt(e.target.value, 10) || 0))}
                           required
                         />
                       </div>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                        Auto-calculated from distance{stops.length > 0 ? ` + ${stops.length * 10}% stop surcharge` : ''}. Adjust as needed.
+                      <span className="text-meta" style={{ marginTop: '4px', display: 'block' }}>
+                        Auto-calculated from distance{stops.length > 0 ? ` + ${stops.length * 10}% stop surcharge` : ''}.
                       </span>
                     </div>
                   )}
@@ -505,11 +548,11 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                 </div>
 
                 {/* Confirm Button */}
-                <div style={{ marginTop: '20px' }}>
+                <div style={{ marginTop: '24px' }}>
                   {confirmSuccess ? (
                     <div className="feedback-alert feedback-success" style={{ justifyContent: 'center', height: '52px' }}>
                       <Check size={18} />
-                      <span>{rideType === 'find' ? 'Ride Search Confirmed!' : 'Ride Offer Created!'}</span>
+                      <span className="text-body" style={{ color: '#34d399' }}>{rideType === 'find' ? 'Ride Search Confirmed!' : 'Ride Offer Created!'}</span>
                     </div>
                   ) : (
                     <button
@@ -520,7 +563,7 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
                     >
                       {isConfirming ? (
                         <>
-                          <Loader2 className="animate-spin" size={18} />
+                          <Loader2 className="animate-spin" size={18} style={{ marginRight: '8px' }} />
                           <span>Confirming route...</span>
                         </>
                       ) : (
@@ -533,36 +576,44 @@ export const RouteConfirmation = ({ routeState, onBack, onProfileClick, onNaviga
               </div>
 
               {/* Right Map Panel */}
-              <div style={{ backgroundColor: '#090d16', padding: '24px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+              <div className="route-right-panel">
                 
+                {/* Geocoding / Calculating route mask overlay */}
+                {isGeocoding && (
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(9, 13, 22, 0.7)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                    <Loader2 className="animate-spin" size={32} style={{ color: 'var(--accent-teal)' }} />
+                    <span className="text-body" style={{ color: 'var(--text-secondary)' }}>Calculating route coordinates & distance...</span>
+                  </div>
+                )}
+
                 {/* Stats bar */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: 'rgba(21, 28, 44, 0.85)', border: '1px solid var(--border-color)', padding: '14px 20px', borderRadius: '12px', zIndex: 1000, backdropFilter: 'blur(4px)', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: 'rgba(21, 28, 44, 0.85)', border: '1px solid var(--border-default)', padding: '16px 24px', borderRadius: '12px', zIndex: 100, backdropFilter: 'blur(4px)', marginBottom: '16px' }}>
                   <div>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Distance</span>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)' }}>{distance ? `${distance} km` : '--'}</div>
+                    <span className="text-meta" style={{ textTransform: 'uppercase', letterSpacing: '1px' }}>Distance</span>
+                    <div className="text-card-title" style={{ fontSize: '18px', marginTop: '4px' }}>{distance ? `${distance} km` : '--'}</div>
                   </div>
-                  <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '20px' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Duration</span>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)' }}>{duration ? `${duration} mins` : '--'}</div>
+                  <div style={{ borderLeft: '1px solid var(--border-default)', paddingLeft: '20px' }}>
+                    <span className="text-meta" style={{ textTransform: 'uppercase', letterSpacing: '1px' }}>Duration</span>
+                    <div className="text-card-title" style={{ fontSize: '18px', marginTop: '4px' }}>{duration ? `${duration} mins` : '--'}</div>
                   </div>
-                  <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '20px' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  <div style={{ borderLeft: '1px solid var(--border-default)', paddingLeft: '20px' }}>
+                    <span className="text-meta" style={{ textTransform: 'uppercase', letterSpacing: '1px' }}>
                       {rideType === 'find' ? 'Est. Fare' : 'Total Fare'}
                     </span>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--color-brand)' }}>
+                    <div className="text-card-title" style={{ fontSize: '18px', color: 'var(--accent-teal)', marginTop: '4px' }}>
                       ₹ {getTotalFareDisplay()}
                     </div>
                   </div>
                   {stops.length > 0 && (
-                    <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '20px' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Stops</span>
-                      <div style={{ fontSize: '18px', fontWeight: '700', color: '#f59e0b' }}>{stops.length}</div>
+                    <div style={{ borderLeft: '1px solid var(--border-default)', paddingLeft: '20px' }}>
+                      <span className="text-meta" style={{ textTransform: 'uppercase', letterSpacing: '1px' }}>Stops</span>
+                      <div className="text-card-title" style={{ fontSize: '18px', color: '#f59e0b', marginTop: '4px' }}>{stops.length}</div>
                     </div>
                   )}
                 </div>
 
                 {/* Map */}
-                <div style={{ flex: 1, position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-color)', zIndex: 1 }}>
+                <div style={{ flex: 1, position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-default)', zIndex: 1 }}>
                   <MapContainer
                     center={startCoords || [23.0225, 72.5714]}
                     zoom={12}

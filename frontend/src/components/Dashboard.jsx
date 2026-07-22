@@ -102,12 +102,47 @@ import { io } from 'socket.io-client';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid 
 } from 'recharts';
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import { useAuth } from '../context/AuthContext';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import SavedPlaces from './SavedPlaces';
 import Help from './Help';
 import Chat from './Chat';
+
+// Custom Leaflet Icons for Live Preview
+const startIcon = L.divIcon ? L.divIcon({
+  html: `<div style="background-color: #3b82f6; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></div>`,
+  className: 'custom-leaflet-icon',
+  iconSize: [24, 24],
+  iconAnchor: [12, 24]
+}) : null;
+
+const destIcon = L.divIcon ? L.divIcon({
+  html: `<div style="background-color: #ef4444; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></div>`,
+  className: 'custom-leaflet-icon',
+  iconSize: [24, 24],
+  iconAnchor: [12, 24]
+}) : null;
+
+// Helper component to auto-pan and zoom map to fit markers
+function MapRecenter({ pickupCoords, destCoords }) {
+  const map = useMap();
+  useEffect(() => {
+    if (pickupCoords && destCoords) {
+      map.fitBounds([
+        [pickupCoords.lat, pickupCoords.lng],
+        [destCoords.lat, destCoords.lng]
+      ], { padding: [30, 30] });
+    } else if (pickupCoords) {
+      map.setView([pickupCoords.lat, pickupCoords.lng], 13);
+    } else if (destCoords) {
+      map.setView([destCoords.lat, destCoords.lng], 13);
+    }
+  }, [pickupCoords, destCoords, map]);
+  return null;
+}
 
 // Simple geocoding cache to reduce redundant OS Nominatim API calls (Requirement 3)
 const nominatimCache = {};
@@ -194,6 +229,17 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       return `${hours}:${minutes} ${day}/${month}/${year}`;
     } catch {
       return datetimeStr || '';
+    }
+  };
+
+  const formatOfferDateTime = (dateTimeStr) => {
+    try {
+      if (!dateTimeStr) return 'Not selected';
+      const d = new Date(dateTimeStr);
+      if (isNaN(d.getTime())) return dateTimeStr;
+      return d.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+    } catch {
+      return dateTimeStr || 'Not selected';
     }
   };
 
@@ -341,6 +387,12 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
       setCurrentHeaderTab(dashboardState.activeTab);
     }
   }, [dashboardState]);
+
+  const handleTabChange = (tabId) => {
+    setCurrentHeaderTab(tabId);
+    setSelectedTrip(null);
+    setActivePaymentMode(null);
+  };
 
   // ── Address Autocomplete Suggestions Query (Nominatim) ─────────────────────
   
@@ -1355,17 +1407,19 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
     textAlign: 'left'
   };
 
+  const isFind = activeSearchTab === 'find';
+  const pickupLocVal = isFind ? pickupLoc : offerPickup;
+  const pickupCoordsVal = isFind ? pickupCoords : offerPickupCoords;
+  const destLocVal = isFind ? destLoc : offerDest;
+  const destCoordsVal = isFind ? destCoords : offerDestCoords;
+
   return (
     <div className="app-container animate-fade-in">
       {/* Header Bar */}
       <Header
         onProfileClick={onProfileClick}
         currentTab={currentHeaderTab}
-        setCurrentTab={(tabId) => {
-          setCurrentHeaderTab(tabId);
-          setSelectedTrip(null); 
-          setActivePaymentMode(null);
-        }}
+        setCurrentTab={handleTabChange}
         showTabs={true}
       />
 
@@ -1374,383 +1428,548 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
         <Sidebar label={getSidebarLabel()} />
 
         <main className="app-content-area">
+          <div className="app-content-container">
           
           {/* Sub-view: DASHBOARD SEARCH/OFFER FORMS */}
           {currentHeaderTab === 'dashboard' && (
-            <div className="dashboard-container">
-              {/* Form Selection Tabs */}
-              <div className="dashboard-toggle-tabs">
+            <div className="ride-planner-card">
+              {/* 1. Card Header Row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', borderBottom: '1px solid var(--border-default)', paddingBottom: '20px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(20, 184, 166, 0.1)',
+                  color: 'var(--accent-teal)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Car size={22} />
+                </div>
+                <div>
+                  <h2 className="text-card-title" style={{ fontSize: '18px', margin: 0 }}>Plan your ride</h2>
+                  <p className="text-meta" style={{ color: 'var(--text-label)', margin: '2px 0 0 0' }}>Search for available rides or offer your own</p>
+                </div>
+              </div>
+
+              {/* 3. Redesigned Tab Toggles (Height 44px Buttons, inline icons) */}
+              <div className="dashboard-toggle-tabs large-track">
                 <button
+                  type="button"
                   className={`tab-toggle-btn ${activeSearchTab === 'find' ? 'active' : ''}`}
                   onClick={() => setActiveSearchTab('find')}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', zIndex: 1, border: 'none', background: 'transparent' }}
                 >
-                  Find a Ride
+                  <Search size={16} />
+                  <span>Find a Ride</span>
                 </button>
                 <button
+                  type="button"
                   className={`tab-toggle-btn ${activeSearchTab === 'offer' ? 'active' : ''}`}
                   onClick={() => setActiveSearchTab('offer')}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', zIndex: 1, border: 'none', background: 'transparent' }}
                 >
-                  Offer a Ride
+                  <Car size={16} />
+                  <span>Offer a Ride</span>
                 </button>
               </div>
 
-              {/* Find a Ride Form */}
-              {activeSearchTab === 'find' && (
-                <form onSubmit={handleFindSubmit} className="auth-form">
-                  <div className="locations-container">
-                    <div className="form-group" style={{ position: 'relative' }}>
-                      <label className="form-label">Pickup Location</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Search size={18} />
-                        </div>
-                        <input
-                          type="text"
-                          className="input-field"
-                          placeholder="Search pickup location..."
-                          value={pickupLoc}
-                          onChange={(e) => handleLocationInputChange(e.target.value, 'find_pickup', setPickupLoc, setPickupSuggestions)}
-                          onFocus={(e) => fetchSuggestions(e.target.value, setPickupSuggestions)}
-                          required
-                        />
-                      </div>
-                      
-                      {/* Suggestions list dropdown menu */}
-                      {pickupSuggestions.length > 0 && (
-                        <ul style={suggestionsDropdownStyle}>
-                          {pickupSuggestions.map((suggestion, idx) => (
-                            <li 
-                              key={idx} 
-                              style={suggestionItemStyle}
-                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                              onClick={() => {
-                                setPickupLoc(suggestion.address);
-                                setPickupCoords(suggestion);
-                                setPickupSuggestions([]);
-                              }}
+              {/* 5. Two-column grid (Form column 65% / Summary rail 35%) */}
+              <div className="ride-planner-grid">
+                
+                {/* Form Column */}
+                <div>
+                  {activeSearchTab === 'find' && (
+                    <form onSubmit={handleFindSubmit} className="auth-form" style={{ gap: '24px' }}>
+                      {/* Zone A: Route Zone (recessed background panel) */}
+                      <div className="planner-zone-panel">
+                        <h4 className="text-meta" style={{ color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', margin: 0 }}>
+                          Route Details
+                        </h4>
+                        
+                        <div className="locations-container" style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
+                          {/* Pickup */}
+                          <div className="form-group" style={{ position: 'relative', width: '100%' }}>
+                            <label className="form-label">Pickup Location</label>
+                            <div className="input-icon-wrapper">
+                              <div className="input-icon-left">
+                                <Search size={18} />
+                              </div>
+                              <input
+                                type="text"
+                                className="input-field text-body"
+                                placeholder="Search pickup location..."
+                                value={pickupLoc}
+                                onChange={(e) => handleLocationInputChange(e.target.value, 'find_pickup', setPickupLoc, setPickupSuggestions)}
+                                onFocus={(e) => fetchSuggestions(e.target.value, setPickupSuggestions)}
+                                required
+                              />
+                            </div>
+                            {pickupSuggestions.length > 0 && (
+                              <ul style={suggestionsDropdownStyle}>
+                                {pickupSuggestions.map((suggestion, idx) => (
+                                  <li 
+                                    key={idx} 
+                                    style={suggestionItemStyle}
+                                    onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                                    onClick={() => {
+                                      setPickupLoc(suggestion.address);
+                                      setPickupCoords(suggestion);
+                                      setPickupSuggestions([]);
+                                    }}
+                                  >
+                                    {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+
+                          {/* Swap */}
+                          <div className="swap-btn-container" style={{ alignSelf: 'center', paddingTop: 0, margin: '-4px 0' }}>
+                            <button
+                              type="button"
+                              className="swap-btn"
+                              onClick={handleSwapLocations}
+                              title="Swap locations"
                             >
-                              {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
+                              <ArrowUpDown size={18} />
+                            </button>
+                          </div>
 
-                    <div className="swap-btn-container">
-                      <button
-                        type="button"
-                        className="swap-btn"
-                        onClick={handleSwapLocations}
-                        title="Swap locations"
-                      >
-                        <ArrowUpDown size={18} />
-                      </button>
-                    </div>
-
-                    <div className="form-group" style={{ position: 'relative' }}>
-                      <label className="form-label">Destination Location</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Search size={18} />
+                          {/* Destination */}
+                          <div className="form-group" style={{ position: 'relative', width: '100%' }}>
+                            <label className="form-label">Destination Location</label>
+                            <div className="input-icon-wrapper">
+                              <div className="input-icon-left">
+                                <Search size={18} />
+                              </div>
+                              <input
+                                type="text"
+                                className="input-field text-body"
+                                placeholder="Search destination location..."
+                                value={destLoc}
+                                onChange={(e) => handleLocationInputChange(e.target.value, 'find_dest', setDestLoc, setDestSuggestions)}
+                                onFocus={(e) => fetchSuggestions(e.target.value, setDestSuggestions)}
+                                required
+                              />
+                            </div>
+                            {destSuggestions.length > 0 && (
+                              <ul style={suggestionsDropdownStyle}>
+                                {destSuggestions.map((suggestion, idx) => (
+                                  <li 
+                                    key={idx} 
+                                    style={suggestionItemStyle}
+                                    onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                                    onClick={() => {
+                                      setDestLoc(suggestion.address);
+                                      setDestCoords(suggestion);
+                                      setDestSuggestions([]);
+                                    }}
+                                  >
+                                    {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
                         </div>
-                        <input
-                          type="text"
-                          className="input-field"
-                          placeholder="Search destination location..."
-                          value={destLoc}
-                          onChange={(e) => handleLocationInputChange(e.target.value, 'find_dest', setDestLoc, setDestSuggestions)}
-                          onFocus={(e) => fetchSuggestions(e.target.value, setDestSuggestions)}
-                          required
-                        />
                       </div>
 
-                      {/* Suggestions list dropdown menu */}
-                      {destSuggestions.length > 0 && (
-                        <ul style={suggestionsDropdownStyle}>
-                          {destSuggestions.map((suggestion, idx) => (
-                            <li 
-                              key={idx} 
-                              style={suggestionItemStyle}
-                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                              onClick={() => {
-                                setDestLoc(suggestion.address);
-                                setDestCoords(suggestion);
-                                setDestSuggestions([]);
-                              }}
+                      {/* Zone B: Details Zone */}
+                      <div className="planner-zone-panel">
+                        <h4 className="text-meta" style={{ color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', margin: 0 }}>
+                          Commute Options
+                        </h4>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          <div className="form-row-2col">
+                            <div className="form-group">
+                              <label className="form-label">Date</label>
+                              <div className="input-icon-wrapper">
+                                <div className="input-icon-left">
+                                  <Calendar size={18} />
+                                </div>
+                                <input
+                                  type="date"
+                                  className="input-field text-body"
+                                  value={rideDate}
+                                  onChange={(e) => setRideDate(e.target.value)}
+                                  required
+                                />
+                              </div>
+                            </div>
+
+                            <div className="form-group">
+                              <label className="form-label">Time</label>
+                              <div className="input-icon-wrapper">
+                                <div className="input-icon-left">
+                                  <Clock size={18} />
+                                </div>
+                                <input
+                                  type="time"
+                                  className="input-field text-body"
+                                  value={rideTime}
+                                  onChange={(e) => setRideTime(e.target.value)}
+                                  required
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="form-group">
+                            <label className="form-label">Number of Seats</label>
+                            <div className="input-icon-wrapper seat-select-wrapper">
+                              <div className="input-icon-left">
+                                <Users size={18} />
+                              </div>
+                              <select
+                                className="input-field seat-select text-body"
+                                value={numSeats}
+                                onChange={(e) => setNumSeats(e.target.value)}
+                                required
+                              >
+                                <option value="1">1 Seat</option>
+                                <option value="2">2 Seats</option>
+                                <option value="3">3 Seats</option>
+                                <option value="4">4 Seats</option>
+                              </select>
+                              <ChevronDown size={18} className="select-arrow-icon" />
+                            </div>
+                          </div>
+
+                          <div className="form-group">
+                            <label className="form-label">Phone Number</label>
+                            <div className="input-icon-wrapper">
+                              <div className="input-icon-left">
+                                <Phone size={18} style={{ transform: 'rotate(90deg)' }} />
+                              </div>
+                              <input
+                                type="tel"
+                                className="input-field text-body"
+                                placeholder="Enter your phone number..."
+                                value={phoneNum}
+                                onChange={(e) => setPhoneNum(e.target.value)}
+                                required
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Submit Section (separated with divider + description) */}
+                      <div style={{ borderTop: '1px solid var(--border-default)', paddingTop: '24px', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+                        <button type="submit" className="btn btn-primary" style={{ width: '100%', height: '48px', fontSize: '15px', fontWeight: '700' }} disabled={isSubmitting}>
+                          {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Navigation size={18} />}
+                          <span>Search Available Rides</span>
+                        </button>
+                        <span className="text-meta" style={{ color: 'var(--text-label)', textAlign: 'center' }}>
+                          You'll see available rides after this
+                        </span>
+                      </div>
+                    </form>
+                  )}
+
+                  {activeSearchTab === 'offer' && (
+                    <form onSubmit={handleOfferSubmit} className="auth-form" style={{ gap: '24px' }}>
+                      {/* Zone A: Route Zone (recessed background panel) */}
+                      <div className="planner-zone-panel">
+                        <h4 className="text-meta" style={{ color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', margin: 0 }}>
+                          Route Details
+                        </h4>
+                        
+                        <div className="locations-container" style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
+                          {/* Pickup */}
+                          <div className="form-group" style={{ position: 'relative', width: '100%' }}>
+                            <label className="form-label">Pickup Location</label>
+                            <div className="input-icon-wrapper">
+                              <div className="input-icon-left">
+                                <Search size={18} />
+                              </div>
+                              <input
+                                type="text"
+                                className="input-field text-body"
+                                placeholder="Search pickup location..."
+                                value={offerPickup}
+                                onChange={(e) => handleLocationInputChange(e.target.value, 'offer_pickup', setOfferPickup, setOfferPickupSuggestions)}
+                                onFocus={(e) => fetchSuggestions(e.target.value, setOfferPickupSuggestions)}
+                                required
+                              />
+                            </div>
+                            {offerPickupSuggestions.length > 0 && (
+                              <ul style={suggestionsDropdownStyle}>
+                                {offerPickupSuggestions.map((suggestion, idx) => (
+                                  <li 
+                                    key={idx} 
+                                    style={suggestionItemStyle}
+                                    onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                                    onClick={() => {
+                                      setOfferPickup(suggestion.address);
+                                      setOfferPickupCoords(suggestion);
+                                      setOfferPickupSuggestions([]);
+                                    }}
+                                  >
+                                    {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+
+                          {/* Swap */}
+                          <div className="swap-btn-container" style={{ alignSelf: 'center', paddingTop: 0, margin: '-4px 0' }}>
+                            <button
+                              type="button"
+                              className="swap-btn"
+                              onClick={handleSwapLocations}
+                              title="Swap locations"
                             >
-                              {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
+                              <ArrowUpDown size={18} />
+                            </button>
+                          </div>
 
-                  <div className="form-row-2col">
-                    <div className="form-group">
-                      <label className="form-label">Date</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Calendar size={18} />
+                          {/* Destination */}
+                          <div className="form-group" style={{ position: 'relative', width: '100%' }}>
+                            <label className="form-label">Destination Location</label>
+                            <div className="input-icon-wrapper">
+                              <div className="input-icon-left">
+                                <Search size={18} />
+                              </div>
+                              <input
+                                type="text"
+                                className="input-field text-body"
+                                placeholder="Search destination location..."
+                                value={offerDest}
+                                onChange={(e) => handleLocationInputChange(e.target.value, 'offer_dest', setOfferDest, setOfferDestSuggestions)}
+                                onFocus={(e) => fetchSuggestions(e.target.value, setOfferDestSuggestions)}
+                                required
+                              />
+                            </div>
+                            {offerDestSuggestions.length > 0 && (
+                              <ul style={suggestionsDropdownStyle}>
+                                {offerDestSuggestions.map((suggestion, idx) => (
+                                  <li 
+                                    key={idx} 
+                                    style={suggestionItemStyle}
+                                    onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                                    onClick={() => {
+                                      setOfferDest(suggestion.address);
+                                      setOfferDestCoords(suggestion);
+                                      setOfferDestSuggestions([]);
+                                    }}
+                                  >
+                                    {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
                         </div>
-                        <input
-                          type="date"
-                          className="input-field"
-                          value={rideDate}
-                          onChange={(e) => setRideDate(e.target.value)}
-                          required
-                        />
                       </div>
-                    </div>
 
-                    <div className="form-group">
-                      <label className="form-label">Time</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Clock size={18} />
+                      {/* Zone B: Details Zone */}
+                      <div className="planner-zone-panel">
+                        <h4 className="text-meta" style={{ color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', margin: 0 }}>
+                          Commute Options
+                        </h4>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          <div className="form-row-2col">
+                            <div className="form-group">
+                              <label className="form-label">Departure Date & Time</label>
+                              <div className="input-icon-wrapper">
+                                <div className="input-icon-left">
+                                  <Clock size={18} />
+                                </div>
+                                <input
+                                  type="datetime-local"
+                                  className="input-field text-body"
+                                  value={offerDateTime}
+                                  onChange={(e) => setOfferDateTime(e.target.value)}
+                                  required
+                                />
+                              </div>
+                            </div>
+
+                            <div className="form-group">
+                              <label className="form-label">Available Seats</label>
+                              <div className="input-icon-wrapper seat-select-wrapper">
+                                <div className="input-icon-left">
+                                  <Users size={18} />
+                                </div>
+                                <select
+                                  className="input-field seat-select text-body"
+                                  value={offerSeats}
+                                  onChange={(e) => setOfferSeats(e.target.value)}
+                                  required
+                                >
+                                  <option value="1">1 Seat</option>
+                                  <option value="2">2 Seats</option>
+                                  <option value="3">3 Seats</option>
+                                  <option value="4">4 Seats</option>
+                                </select>
+                                <ChevronDown size={18} className="select-arrow-icon" />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="form-group">
+                            <label className="form-label">Vehicle</label>
+                            <div className="input-icon-wrapper seat-select-wrapper">
+                              <div className="input-icon-left">
+                                <Car size={18} />
+                              </div>
+                              <select
+                                className="input-field seat-select text-body"
+                                value={selectedVehicle}
+                                onChange={(e) => setSelectedVehicle(e.target.value)}
+                                required
+                              >
+                                {userVehicles.length === 0 ? (
+                                  <option value="">-- No Vehicles Registered --</option>
+                                ) : (
+                                  userVehicles
+                                    .filter(v => v.status === 'active')
+                                    .map((vehicle) => (
+                                      <option key={vehicle.id} value={vehicle.id}>
+                                        {vehicle.model} ({vehicle.registrationNumber})
+                                      </option>
+                                    ))
+                                )}
+                              </select>
+                              <ChevronDown size={18} className="select-arrow-icon" />
+                            </div>
+                          </div>
+
+                          <div className="form-group">
+                            <label className="form-label">Phone Number</label>
+                            <div className="input-icon-wrapper">
+                              <div className="input-icon-left">
+                                <Phone size={18} style={{ transform: 'rotate(90deg)' }} />
+                              </div>
+                              <input
+                                type="tel"
+                                className="input-field text-body"
+                                placeholder="Enter your phone number..."
+                                value={phoneNum}
+                                onChange={(e) => setPhoneNum(e.target.value)}
+                                required
+                              />
+                            </div>
+                          </div>
                         </div>
-                        <input
-                          type="time"
-                          className="input-field"
-                          value={rideTime}
-                          onChange={(e) => setRideTime(e.target.value)}
-                          required
-                        />
+                      </div>
+
+                      {/* Submit Section (separated with divider + description) */}
+                      <div style={{ borderTop: '1px solid var(--border-default)', paddingTop: '24px', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+                        <button type="submit" className="btn btn-primary" style={{ width: '100%', height: '48px', fontSize: '15px', fontWeight: '700' }} disabled={isSubmitting}>
+                          {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Car size={18} />}
+                          <span>Publish Ride Offer</span>
+                        </button>
+                        <span className="text-meta" style={{ color: 'var(--text-label)', textAlign: 'center' }}>
+                          Your ride will be visible to nearby riders
+                        </span>
+                      </div>
+                    </form>
+                  )}
+                </div>
+
+                {/* Right-side Preview Rail (Only rendered layout logic) */}
+                <div className="ride-summary-rail-wrapper">
+                  <div className="ride-summary-rail">
+                    <h3 className="text-card-title" style={{ fontSize: '15px', margin: 0 }}>Live Commute Preview</h3>
+                    
+                    {/* Live Route Points Line */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', position: 'relative', paddingLeft: '20px', borderLeft: '2px dashed var(--border-default)' }}>
+                      {/* Pickup dot */}
+                      <div style={{ position: 'absolute', left: '-6px', top: '4px', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--accent-teal)' }} />
+                      <div>
+                        <div className="text-meta" style={{ fontSize: '11px', color: 'var(--text-label)' }}>PICKUP FROM</div>
+                        <div className="text-body" style={{ fontWeight: '600', marginTop: '2px', wordBreak: 'break-word' }}>
+                          {activeSearchTab === 'find' ? (pickupLoc || 'Choose pickup...') : (offerPickup || 'Choose pickup...')}
+                        </div>
+                      </div>
+
+                      {/* Destination dot */}
+                      <div style={{ position: 'absolute', left: '-6px', bottom: '4px', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ef4444' }} />
+                      <div>
+                        <div className="text-meta" style={{ fontSize: '11px', color: 'var(--text-label)' }}>DESTINATION</div>
+                        <div className="text-body" style={{ fontWeight: '600', marginTop: '2px', wordBreak: 'break-word' }}>
+                          {activeSearchTab === 'find' ? (destLoc || 'Choose destination...') : (offerDest || 'Choose destination...')}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Number of Seats</label>
-                    <div className="input-icon-wrapper seat-select-wrapper">
-                      <div className="input-icon-left">
-                        <Users size={18} />
-                      </div>
-                      <select
-                        className="input-field seat-select"
-                        value={numSeats}
-                        onChange={(e) => setNumSeats(e.target.value)}
-                        required
+                    {/* Live Map Preview */}
+                    <div style={{ height: '180px', width: '100%', borderRadius: '8px', overflow: 'hidden', margin: '16px 0', border: '1px solid var(--border-default)', position: 'relative', zIndex: 1 }}>
+                      <MapContainer
+                        center={[19.0760, 72.8777]}
+                        zoom={11}
+                        style={{ height: '100%', width: '100%' }}
+                        zoomControl={false}
                       >
-                        <option value="1">1 Seat</option>
-                        <option value="2">2 Seats</option>
-                        <option value="3">3 Seats</option>
-                        <option value="4">4 Seats</option>
-                      </select>
-                      <ChevronDown size={18} className="select-arrow-icon" />
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Phone Number</label>
-                    <div className="input-icon-wrapper">
-                      <div className="input-icon-left">
-                        <Phone size={18} style={{ transform: 'rotate(90deg)' }} />
-                      </div>
-                      <input
-                        type="tel"
-                        className="input-field"
-                        placeholder="Enter your phone number..."
-                        value={phoneNum}
-                        onChange={(e) => setPhoneNum(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                    {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Navigation size={18} />}
-                    <span>Find Ride</span>
-                  </button>
-                </form>
-              )}
-
-              {/* Offer a Ride Form (Recurring rides checkbox and Fare input removed completely) */}
-              {activeSearchTab === 'offer' && (
-                <form onSubmit={handleOfferSubmit} className="auth-form">
-                  <div className="locations-container">
-                    <div className="form-group" style={{ position: 'relative' }}>
-                      <label className="form-label">Pickup Location</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Search size={18} />
-                        </div>
-                        <input
-                          type="text"
-                          className="input-field"
-                          placeholder="Search pickup location..."
-                          value={offerPickup}
-                          onChange={(e) => handleLocationInputChange(e.target.value, 'offer_pickup', setOfferPickup, setOfferPickupSuggestions)}
-                          onFocus={(e) => fetchSuggestions(e.target.value, setOfferPickupSuggestions)}
-                          required
+                        <TileLayer
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                         />
-                      </div>
-
-                      {/* Suggestions list dropdown menu */}
-                      {offerPickupSuggestions.length > 0 && (
-                        <ul style={suggestionsDropdownStyle}>
-                          {offerPickupSuggestions.map((suggestion, idx) => (
-                            <li 
-                              key={idx} 
-                              style={suggestionItemStyle}
-                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                              onClick={() => {
-                                setOfferPickup(suggestion.address);
-                                setOfferPickupCoords(suggestion);
-                                setOfferPickupSuggestions([]);
-                              }}
-                            >
-                              {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-
-                    <div className="swap-btn-container">
-                      <button
-                        type="button"
-                        className="swap-btn"
-                        onClick={handleSwapLocations}
-                        title="Swap locations"
-                      >
-                        <ArrowUpDown size={18} />
-                      </button>
-                    </div>
-
-                    <div className="form-group" style={{ position: 'relative' }}>
-                      <label className="form-label">Destination Location</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Search size={18} />
-                        </div>
-                        <input
-                          type="text"
-                          className="input-field"
-                          placeholder="Search destination location..."
-                          value={offerDest}
-                          onChange={(e) => handleLocationInputChange(e.target.value, 'offer_dest', setOfferDest, setOfferDestSuggestions)}
-                          onFocus={(e) => fetchSuggestions(e.target.value, setOfferDestSuggestions)}
-                          required
-                        />
-                      </div>
-
-                      {/* Suggestions list dropdown menu */}
-                      {offerDestSuggestions.length > 0 && (
-                        <ul style={suggestionsDropdownStyle}>
-                          {offerDestSuggestions.map((suggestion, idx) => (
-                            <li 
-                              key={idx} 
-                              style={suggestionItemStyle}
-                              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                              onClick={() => {
-                                setOfferDest(suggestion.address);
-                                setOfferDestCoords(suggestion);
-                                setOfferDestSuggestions([]);
-                              }}
-                            >
-                              {suggestion.label ? `⭐ ${suggestion.label} - ${suggestion.address}` : suggestion.address}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="form-row-2col">
-                    <div className="form-group">
-                      <label className="form-label">Departure Date & Time</label>
-                      <div className="input-icon-wrapper">
-                        <div className="input-icon-left">
-                          <Clock size={18} />
-                        </div>
-                        <input
-                          type="datetime-local"
-                          className="input-field"
-                          value={offerDateTime}
-                          onChange={(e) => setOfferDateTime(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label className="form-label">Available Seats</label>
-                      <div className="input-icon-wrapper seat-select-wrapper">
-                        <div className="input-icon-left">
-                          <Users size={18} />
-                        </div>
-                        <select
-                          className="input-field seat-select"
-                          value={offerSeats}
-                          onChange={(e) => setOfferSeats(e.target.value)}
-                          required
-                        >
-                          <option value="1">1 Seat</option>
-                          <option value="2">2 Seats</option>
-                          <option value="3">3 Seats</option>
-                          <option value="4">4 Seats</option>
-                        </select>
-                        <ChevronDown size={18} className="select-arrow-icon" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Vehicle</label>
-                    <div className="input-icon-wrapper seat-select-wrapper">
-                      <div className="input-icon-left">
-                        <Car size={18} />
-                      </div>
-                      <select
-                        className="input-field seat-select"
-                        value={selectedVehicle}
-                        onChange={(e) => setSelectedVehicle(e.target.value)}
-                        required
-                      >
-                        {userVehicles.length === 0 ? (
-                          <option value="">-- No Vehicles Registered --</option>
-                        ) : (
-                          userVehicles
-                            .filter(v => v.status === 'active')
-                            .map((vehicle) => (
-                              <option key={vehicle.id} value={vehicle.id}>
-                                {vehicle.model} ({vehicle.registrationNumber})
-                              </option>
-                            ))
+                        {pickupLocVal && pickupCoordsVal && (
+                          <Marker position={[pickupCoordsVal.lat, pickupCoordsVal.lng]} icon={startIcon} />
                         )}
-                      </select>
-                      <ChevronDown size={18} className="select-arrow-icon" />
+                        {destLocVal && destCoordsVal && (
+                          <Marker position={[destCoordsVal.lat, destCoordsVal.lng]} icon={destIcon} />
+                        )}
+                        {pickupLocVal && pickupCoordsVal && destLocVal && destCoordsVal && (
+                          <Polyline positions={[[pickupCoordsVal.lat, pickupCoordsVal.lng], [destCoordsVal.lat, destCoordsVal.lng]]} color="var(--accent-teal)" dashArray="5, 10" />
+                        )}
+                        <MapRecenter 
+                          pickupCoords={pickupCoordsVal} 
+                          destCoords={destCoordsVal} 
+                        />
+                      </MapContainer>
                     </div>
-                  </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Phone Number</label>
-                    <div className="input-icon-wrapper">
-                      <div className="input-icon-left">
-                        <Phone size={18} style={{ transform: 'rotate(90deg)' }} />
+                    <div style={{ borderTop: '1px solid var(--border-default)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="text-meta">Commute Type</span>
+                        <span className="text-body" style={{ fontWeight: '700', color: 'var(--accent-teal)' }}>
+                          {activeSearchTab === 'find' ? 'Requesting Ride' : 'Offering Ride'}
+                        </span>
                       </div>
-                      <input
-                        type="tel"
-                        className="input-field"
-                        placeholder="Enter your phone number..."
-                        value={phoneNum}
-                        onChange={(e) => setPhoneNum(e.target.value)}
-                        required
-                      />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="text-meta">Date & Time</span>
+                        <span className="text-body" style={{ fontWeight: '600' }}>
+                          {activeSearchTab === 'find' ? (
+                            (rideDate || 'Not selected') + (rideTime ? ` @ ${rideTime}` : '')
+                          ) : (
+                            formatOfferDateTime(offerDateTime)
+                          )}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span className="text-meta">Required Seats</span>
+                        <span className="text-body" style={{ fontWeight: '700' }}>
+                          {activeSearchTab === 'find' ? numSeats : offerSeats} Seat{ (activeSearchTab === 'find' ? numSeats : offerSeats) !== '1' ? 's' : '' }
+                        </span>
+                      </div>
+                      {activeSearchTab === 'offer' && selectedVehicle && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span className="text-meta">Vehicle Model</span>
+                          <span className="text-body" style={{ fontWeight: '600' }}>
+                            {userVehicles.find(v => v.id === selectedVehicle)?.model || 'Selected vehicle'}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
+                </div>
 
-                  <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                    {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Car size={18} />}
-                    <span>Offer Ride</span>
-                  </button>
-                </form>
-              )}
+              </div>
             </div>
           )}
 
@@ -2101,137 +2320,129 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                       </button>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        
-                        {/* Trip Details main Card */}
+
+                        {/* ── TRIP DETAIL HERO CARD ── */}
                         <div style={{ 
                           backgroundColor: 'var(--bg-input)', 
                           border: '1px solid var(--border-color)', 
-                          borderRadius: 'var(--radius-lg)', 
-                          padding: '28px', 
-                          boxShadow: 'var(--shadow-md)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '24px',
-                          position: 'relative'
+                          borderRadius: '20px', 
+                          overflow: 'hidden',
+                          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
                         }}>
-                          {/* 3-dots actions icon */}
-                          <button style={{ 
-                            position: 'absolute', 
-                            top: '24px', 
-                            right: '24px', 
-                            background: 'none', 
-                            border: 'none', 
-                            color: 'var(--text-muted)', 
-                            cursor: 'pointer' 
-                          }}>
-                            <MoreVertical size={20} />
-                          </button>
 
-                          {/* Metadata Header Row */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ 
-                              fontSize: '11px', 
-                              fontWeight: '700', 
-                              textTransform: 'uppercase',
-                              letterSpacing: '1px',
-                              padding: '3px 10px', 
-                              borderRadius: '4px',
-                              backgroundColor: (selectedTrip.driverId === user?.id) ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                              color: (selectedTrip.driverId === user?.id) ? 'var(--color-brand)' : '#3b82f6'
-                            }}>
-                              {(selectedTrip.driverId === user?.id) ? 'Driver Mode' : 'Passenger Mode'}
-                            </span>
+                          {/* Coloured top band with role + status */}
+                          <div style={{
+                            background: (selectedTrip.driverId === user?.id)
+                              ? 'linear-gradient(135deg, rgba(16,185,129,0.18), rgba(20,184,166,0.10))'
+                              : 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(99,102,241,0.10))',
+                            borderBottom: '1px solid var(--border-color)',
+                            padding: '18px 24px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{
+                                width: '40px', height: '40px', borderRadius: '50%',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                backgroundColor: (selectedTrip.driverId === user?.id) ? 'rgba(16,185,129,0.2)' : 'rgba(59,130,246,0.2)',
+                                color: (selectedTrip.driverId === user?.id) ? '#10b981' : '#3b82f6',
+                              }}>
+                                {(selectedTrip.driverId === user?.id) ? <Car size={20} /> : <Users size={20} />}
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                  {(selectedTrip.driverId === user?.id) ? 'You are the Driver' : (selectedTrip.driver?.name || 'Carpool Driver')}
+                                </div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                  {(selectedTrip.driverId === user?.id)
+                                    ? (selectedTrip.passengers?.length > 0
+                                        ? `${selectedTrip.passengers.length} passenger${selectedTrip.passengers.length > 1 ? 's' : ''}: ${selectedTrip.passengers.map(p => p.user?.name).join(', ')}`
+                                        : 'No passengers booked yet')
+                                    : `${selectedTrip.vehicle?.model || 'Vehicle'} · ${selectedTrip.vehicle?.registrationNumber || ''}`
+                                  }
+                                </div>
+                              </div>
+                            </div>
                             {getStatusBadge(selectedTrip.status)}
                           </div>
 
-                          {/* Profiles Row */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                            <div style={{ 
-                              width: '56px', 
-                              height: '56px', 
-                              borderRadius: '50%', 
-                              backgroundColor: 'var(--bg-card)', 
-                              border: '2px solid var(--border-color)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: 'var(--text-secondary)'
-                            }}>
-                              <Users size={28} />
-                            </div>
-                            <div>
-                              {selectedTrip.driverId === user?.id ? (
-                                <>
-                                  <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>You (Driver)</h2>
-                                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                                    Passenger Bookings: {selectedTrip.passengers?.length > 0 
-                                      ? selectedTrip.passengers.map(p => p.user?.name).join(', ') 
-                                      : 'None yet.'}
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)', margin: 0 }}>
-                                    {selectedTrip.driver?.name || 'Carpool Driver'}
-                                  </h2>
-                                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                                    Route: {selectedTrip.ride?.pickupAddress} to {selectedTrip.ride?.destAddress}
-                                  </div>
-                                </>
-                              )}
-                              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                {formatRideDate(selectedTrip.ride?.datetime)}
+                          {/* Route timeline */}
+                          <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '0' }}>
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'stretch' }}>
+                              {/* Dot + line */}
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '20px', flexShrink: 0, paddingTop: '4px' }}>
+                                <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#3b82f6', border: '2px solid rgba(59,130,246,0.4)', flexShrink: 0 }} />
+                                <div style={{ width: '2px', flex: 1, background: 'linear-gradient(to bottom, #3b82f6, var(--accent-teal))', margin: '6px 0', minHeight: '40px' }} />
+                                <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'var(--accent-teal)', border: '2px solid rgba(20,184,166,0.4)', flexShrink: 0 }} />
                               </div>
-                            </div>
-                          </div>
-
-                          {/* Route/Vehicle Details Grid */}
-                          <div style={{ 
-                            display: 'grid', 
-                            gridTemplateColumns: '1fr 1fr 1fr', 
-                            gap: '16px', 
-                            backgroundColor: 'rgba(11, 15, 25, 0.4)', 
-                            padding: '20px', 
-                            borderRadius: 'var(--radius-md)',
-                            border: '1px solid var(--border-color)' 
-                          }}>
-                            <div>
-                              <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Vehicle</div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                                <Car size={18} className="brand-logo" />
+                              {/* Addresses */}
+                              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '8px' }}>
+                                <div style={{ paddingBottom: '16px' }}>
+                                  <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '3px' }}>Pickup</div>
+                                  <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', lineHeight: 1.4 }}>{selectedTrip.ride?.pickupAddress}</div>
+                                </div>
                                 <div>
-                                  <div style={{ fontSize: '14px', fontWeight: '600' }}>{selectedTrip.vehicle?.model || 'Toyota Prius'}</div>
-                                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{selectedTrip.vehicle?.registrationNumber || 'GJ01AB1234'}</div>
+                                  <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '3px' }}>Drop-off</div>
+                                  <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', lineHeight: 1.4 }}>{selectedTrip.ride?.destAddress}</div>
                                 </div>
                               </div>
                             </div>
 
-                            <div>
-                              <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Pick UP Point</div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                                <MapPin size={18} style={{ color: '#3b82f6' }} />
-                                <div style={{ fontSize: '14px', fontWeight: '600' }}>{selectedTrip.ride?.pickupAddress}</div>
+                            {/* Metadata row */}
+                            <div style={{ 
+                              display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '20px',
+                              paddingTop: '20px', borderTop: '1px solid var(--border-color)'
+                            }}>
+                              <div style={{ flex: 1, minWidth: '80px', padding: '12px 16px', backgroundColor: 'rgba(11,15,25,0.5)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Date</div>
+                                <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                  {selectedTrip.ride?.datetime ? new Date(selectedTrip.ride.datetime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                </div>
+                              </div>
+                              <div style={{ flex: 1, minWidth: '80px', padding: '12px 16px', backgroundColor: 'rgba(11,15,25,0.5)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Time</div>
+                                <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                  {selectedTrip.ride?.datetime ? new Date(selectedTrip.ride.datetime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                                </div>
+                              </div>
+                              <div style={{ flex: 1, minWidth: '80px', padding: '12px 16px', backgroundColor: 'rgba(11,15,25,0.5)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Vehicle</div>
+                                <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>{selectedTrip.vehicle?.model || '—'}</div>
+                              </div>
+                              <div style={{ flex: 1, minWidth: '80px', padding: '12px 16px', backgroundColor: 'rgba(20,184,166,0.06)', borderRadius: '12px', border: '1px solid rgba(20,184,166,0.2)' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                                  {selectedTrip.driverId === user?.id ? 'Earnings/seat' : 'Your Fare'}
+                                </div>
+                                <div style={{ fontSize: '15px', fontWeight: '800', color: 'var(--accent-teal)' }}>
+                                  ₹{selectedTrip.fare > 0 ? selectedTrip.fare : (selectedTrip.ride?.farePerSeat || 0)}
+                                </div>
                               </div>
                             </div>
 
-                            <div>
-                              <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '8px' }}>Drop Point</div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                                <MapPin size={18} style={{ color: 'var(--color-brand)' }} />
-                                <div style={{ fontSize: '14px', fontWeight: '600' }}>{selectedTrip.ride?.destAddress}</div>
-                              </div>
-                            </div>
+                            {/* Stops info if any */}
+                            {selectedTrip.ride?.stops && (() => {
+                              try {
+                                const stops = JSON.parse(selectedTrip.ride.stops);
+                                return stops.length > 0 ? (
+                                  <div style={{ marginTop: '12px', padding: '10px 14px', backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '10px', fontSize: '12px', color: '#f59e0b' }}>
+                                    🛑 {stops.length} stop{stops.length > 1 ? 's' : ''}: {stops.map(s => s.address).join(' → ')}
+                                  </div>
+                                ) : null;
+                              } catch { return null; }
+                            })()}
+
                           </div>
 
-                          {/* Bottom Bar: Action buttons and Price */}
+                          {/* Action buttons footer */}
                           <div style={{ 
+                            padding: '16px 24px 20px',
+                            borderTop: '1px solid var(--border-color)',
                             display: 'flex', 
                             justifyContent: 'space-between', 
                             alignItems: 'center', 
                             flexWrap: 'wrap', 
-                            gap: '16px', 
-                            borderTop: '1px solid var(--border-color)', 
-                            paddingTop: '20px' 
+                            gap: '12px',
                           }}>
                             
                             {/* Driver Status Transition Controls */}
@@ -2515,7 +2726,11 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                   ) : (
                     /* Scenario 2: Active Trips List (Loading skeletons integrated) */
                     <>
-                      <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '16px' }}>My Active Trips</h2>
+                      {/* Trips Page Header */}
+                      <div style={{ marginBottom: '24px' }}>
+                        <h2 style={{ fontSize: '22px', fontWeight: '800', color: 'var(--text-primary)', margin: 0 }}>My Active Trips</h2>
+                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }}>Your current and upcoming bookings</p>
+                      </div>
 
                       {isLoadingData && activeTrips.length === 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -2526,18 +2741,26 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                       ) : activeTrips.length === 0 ? (
                         <div style={{ 
                           textAlign: 'center', 
-                          padding: '48px 24px', 
+                          padding: '56px 24px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '12px',
                           backgroundColor: 'var(--bg-input)', 
                           border: '1px dashed var(--border-color)', 
-                          borderRadius: '12px',
-                          color: 'var(--text-secondary)'
+                          borderRadius: '16px',
                         }}>
-                          No upcoming active trips scheduled. Search rides to book a seat, or offer a ride to publish an route!
+                          <div style={{ width: '52px', height: '52px', borderRadius: '50%', backgroundColor: 'rgba(20,184,166,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-teal)' }}>
+                            <Navigation size={22} />
+                          </div>
+                          <div style={{ fontWeight: '600', color: 'var(--text-primary)', fontSize: '15px' }}>No active trips yet</div>
+                          <div style={{ fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '260px' }}>Book a seat or offer your own ride to get started</div>
                         </div>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                           {activeTrips.map((trip) => {
                             const isDriver = trip.driverId === user?.id;
+                            const fare = trip.fare > 0 ? trip.fare : (trip.ride?.farePerSeat || 0);
                             return (
                               <div 
                                 key={trip.id}
@@ -2546,91 +2769,106 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
                                 style={{ 
                                   backgroundColor: 'var(--bg-input)', 
                                   border: '1px solid var(--border-color)', 
-                                  borderRadius: 'var(--radius-md)', 
-                                  padding: '20px', 
+                                  borderRadius: '16px', 
+                                  padding: '20px 24px', 
                                   cursor: 'pointer',
+                                  transition: 'border-color 0.2s, box-shadow 0.2s',
                                   display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  transition: 'all 0.2s'
+                                  flexDirection: 'column',
+                                  gap: '14px',
                                 }}
                               >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                  <div style={{ 
-                                    width: '42px', 
-                                    height: '42px', 
-                                    borderRadius: '50%', 
-                                    backgroundColor: 'var(--bg-card)', 
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: 'var(--text-secondary)'
-                                  }}>
-                                    <Users size={20} />
+                                {/* Top row: Role badge + status + fare */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ 
+                                      fontSize: '10px', 
+                                      fontWeight: '700', 
+                                      letterSpacing: '0.6px',
+                                      textTransform: 'uppercase',
+                                      padding: '3px 9px', 
+                                      borderRadius: '20px',
+                                      backgroundColor: isDriver ? 'rgba(16, 185, 129, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+                                      color: isDriver ? '#10b981' : '#3b82f6',
+                                      border: `1px solid ${isDriver ? 'rgba(16,185,129,0.25)' : 'rgba(59,130,246,0.25)'}`,
+                                    }}>
+                                      {isDriver ? '🚗  Driver' : '🧑  Passenger'}
+                                    </span>
+                                    {getStatusBadge(trip.status)}
                                   </div>
-                                  <div>
-                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                      <span style={{ 
-                                        fontSize: '10px', 
-                                        fontWeight: '700', 
-                                        padding: '2px 6px', 
-                                        borderRadius: '3px',
-                                        backgroundColor: isDriver ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                                        color: isDriver ? 'var(--color-brand)' : '#3b82f6'
-                                      }}>
-                                        {isDriver ? 'Driver' : 'Passenger'}
-                                      </span>
-                                      <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>
-                                        {trip.ride?.pickupAddress} to {trip.ride?.destAddress}
-                                      </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{ textAlign: 'right' }}>
+                                      <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-primary)', lineHeight: 1 }}>₹{fare}</div>
+                                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{isDriver ? 'per seat' : 'your fare'}</div>
                                     </div>
-                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                      {formatRideDate(trip.ride?.datetime)}
+                                    {/* Quick actions on list */}
+                                    {!isDriver && trip.status === 'booked' && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        style={{ height: '30px', padding: '0 12px', fontSize: '11px', fontWeight: '700', borderColor: 'rgba(239,68,68,0.4)', color: '#ef4444' }}
+                                        onClick={(e) => handleCancelBooking(trip, e)}
+                                      >
+                                        Cancel
+                                      </button>
+                                    )}
+                                    {!isDriver && trip.status === 'payment_pending' && (
+                                      <button
+                                        className="btn btn-primary"
+                                        style={{ height: '30px', padding: '0 14px', fontSize: '11px', fontWeight: '700' }}
+                                        onClick={(e) => { e.stopPropagation(); handleStartPaymentFlow(trip); }}
+                                      >
+                                        Pay Now
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Route visual */}
+                                <div style={{ display: 'flex', alignItems: 'stretch', gap: '12px' }}>
+                                  {/* Timeline dots & line */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '3px', gap: 0, flexShrink: 0 }}>
+                                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#3b82f6', flexShrink: 0 }} />
+                                    <div style={{ width: '2px', flex: 1, background: 'linear-gradient(to bottom, #3b82f6, var(--accent-teal))', margin: '4px 0', minHeight: '24px' }} />
+                                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--accent-teal)', flexShrink: 0 }} />
+                                  </div>
+                                  {/* Address labels */}
+                                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '8px' }}>
+                                    <div>
+                                      <div style={{ fontSize: '10px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>Pickup</div>
+                                      <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                                        {trip.ride?.pickupAddress?.split(',').slice(0, 2).join(',') || trip.ride?.pickupAddress}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '10px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>Drop-off</div>
+                                      <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', lineHeight: 1.3 }}>
+                                        {trip.ride?.destAddress?.split(',').slice(0, 2).join(',') || trip.ride?.destAddress}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {/* Date/time pill */}
+                                  <div style={{ 
+                                    alignSelf: 'center',
+                                    padding: '8px 12px',
+                                    backgroundColor: 'rgba(11,15,25,0.5)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '10px',
+                                    textAlign: 'center',
+                                    flexShrink: 0
+                                  }}>
+                                    <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                      {trip.ride?.datetime ? new Date(trip.ride.datetime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                      {trip.ride?.datetime ? new Date(trip.ride.datetime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}
                                     </div>
                                   </div>
                                 </div>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
-                                    {getStatusBadge(trip.status)}
-                                    <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                                      ₹ {trip.fare > 0 ? trip.fare : (trip.ride?.farePerSeat || 0)}
-                                    </div>
-                                  </div>
-                                  {/* Passenger: Cancel booking (booked status only) */}
-                                  {!isDriver && trip.status === 'booked' && (
-                                    <button
-                                      className="btn btn-secondary"
-                                      style={{ height: '32px', padding: '0 12px', fontSize: '11px', fontWeight: '700', borderColor: 'rgba(239,68,68,0.4)', color: '#ef4444' }}
-                                      onClick={(e) => handleCancelBooking(trip, e)}
-                                    >
-                                      Cancel
-                                    </button>
-                                  )}
-                                  {!isDriver && trip.status === 'payment_pending' && (
-                                    <button
-                                      className="btn btn-primary"
-                                      style={{ height: '32px', padding: '0 12px', fontSize: '11px', fontWeight: '700' }}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleStartPaymentFlow(trip);
-                                      }}
-                                    >
-                                      Pay Now
-                                    </button>
-                                  )}
-                                  {!isDriver && trip.status === 'payment_completed' && (
-                                    <button
-                                      className="btn btn-secondary"
-                                      style={{ height: '32px', padding: '0 12px', fontSize: '11px', fontWeight: '700', cursor: 'not-allowed', opacity: 0.7 }}
-                                      disabled
-                                    >
-                                      ✅ Payment Completed
-                                    </button>
-                                  )}
-                                  {!(!isDriver && (trip.status === 'booked' || trip.status === 'payment_pending' || trip.status === 'payment_completed')) && (
-                                    <ArrowRight size={18} style={{ color: 'var(--text-muted)' }} />
-                                  )}
+                                {/* Footer: tap to view */}
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px' }}>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Tap for details</span>
+                                  <ArrowRight size={13} style={{ color: 'var(--text-muted)' }} />
                                 </div>
 
                               </div>
@@ -3508,25 +3746,24 @@ export const Dashboard = ({ onProfileClick, onNavigate, dashboardState }) => {
 
           {/* Sub-view: PLACEHOLDERS FOR Other TABS (Setting) */}
           {currentHeaderTab === 'setting' && (
-            <SettingsTab onNavigate={setCurrentHeaderTab} token={token} />
+            <SettingsTab onNavigate={handleTabChange} token={token} />
           )}
 
           {currentHeaderTab === 'saved-places' && (
-            <SavedPlaces onBack={() => setCurrentHeaderTab('setting')} token={token} />
+            <SavedPlaces onBack={() => handleTabChange('setting')} token={token} />
           )}
 
           {currentHeaderTab === 'help' && (
-            <Help onBack={() => setCurrentHeaderTab('setting')} />
+            <Help onBack={() => handleTabChange('setting')} />
           )}
 
           {currentHeaderTab === 'chat' && (
-            <Chat onBack={() => setCurrentHeaderTab('setting')} token={token} user={user} />
+            <Chat onBack={() => handleTabChange('setting')} token={token} user={user} />
           )}
 
+          </div>
         </main>
       </div>
-
-
 
     </div>
   );

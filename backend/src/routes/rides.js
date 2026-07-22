@@ -288,9 +288,9 @@ router.patch('/:id/cancel', requireAuth, async (req, res) => {
     const refundOps = [];
     for (const trip of ride.trips) {
       for (const { user: passenger } of trip.passengers) {
-        // Find wallet payment transactions for this passenger on this trip
+        // Find payment transactions for this passenger on this trip
         const walletTxn = trip.transactions.find(
-          (t) => t.userId === passenger.id && t.type === 'payment' && t.method === 'wallet' && t.status === 'completed'
+          (t) => t.userId === passenger.id && t.type === 'payment' && t.status === 'completed'
         );
         if (walletTxn) {
           refundOps.push(

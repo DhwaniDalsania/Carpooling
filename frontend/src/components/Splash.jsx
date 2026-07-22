@@ -1,13 +1,14 @@
 import React, { useEffect } from 'react';
 
-export const Splash = ({ onFinish }) => {
+export const Splash = ({ onFinish, isInitializing }) => {
   useEffect(() => {
-    const timer = setTimeout(() => {
-      onFinish();
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, [onFinish]);
+    if (!isInitializing) {
+      const timer = setTimeout(() => {
+        onFinish();
+      }, 600); // 600ms minimum show for smooth branding transition
+      return () => clearTimeout(timer);
+    }
+  }, [isInitializing, onFinish]);
 
   return (
     <div className="splash-container animate-fade-in">
@@ -53,8 +54,8 @@ export const Splash = ({ onFinish }) => {
         </div>
 
         <div className="splash-text-section">
-          <h1 className="splash-title">Carpooling</h1>
-          <p className="splash-tagline">Ride Together, Save Together</p>
+          <h1 className="splash-title">FindMeARide</h1>
+          <p className="splash-tagline">Commute Smarter Together</p>
         </div>
 
         <div className="splash-loading-bar">

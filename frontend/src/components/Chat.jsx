@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, MessageSquare, Send, Loader2, User, Clock, Navigation } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Send, Loader2, User, Clock, Navigation, RefreshCw } from 'lucide-react';
 import { io } from 'socket.io-client';
 
 export const Chat = ({ onBack, token, user }) => {
@@ -10,6 +10,7 @@ export const Chat = ({ onBack, token, user }) => {
   const [loadingList, setLoadingList] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [mobileShowChat, setMobileShowChat] = useState(false);
 
   const socketRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -42,7 +43,7 @@ export const Chat = ({ onBack, token, user }) => {
       setConversations(unique);
     } catch (err) {
       console.error('[Chat fetchConversations]', err);
-      setErrorMsg('Failed to load chat conversations.');
+      setErrorMsg('We couldn\'t load your chat rooms. Please check your internet connection.');
     } finally {
       setLoadingList(false);
     }
@@ -149,31 +150,130 @@ export const Chat = ({ onBack, token, user }) => {
     return trip.driver?.name || 'Ride Driver';
   };
 
+  const ConversationSkeleton = () => (
+    <div style={{ padding: '16px', borderBottom: '1px solid var(--border-default)', display: 'flex', gap: '12px', alignItems: 'center' }}>
+      <div className="shimmer-bg" style={{ width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0 }}></div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div className="shimmer-bg" style={{ width: '50%', height: '12px', borderRadius: '4px' }}></div>
+          <div className="shimmer-bg" style={{ width: '20%', height: '8px', borderRadius: '4px' }}></div>
+        </div>
+        <div className="shimmer-bg" style={{ width: '80%', height: '10px', borderRadius: '4px' }}></div>
+      </div>
+    </div>
+  );
+
+  const MessageSkeleton = ({ isMe }) => (
+    <div style={{
+      alignSelf: isMe ? 'flex-end' : 'flex-start',
+      maxWidth: '60%',
+      width: '120px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px'
+    }}>
+      <div className="shimmer-bg" style={{
+        height: '36px',
+        width: '100%',
+        borderRadius: '12px',
+        borderTopRightRadius: isMe ? '2px' : '12px',
+        borderTopLeftRadius: isMe ? '12px' : '2px',
+      }}></div>
+      <div className="shimmer-bg" style={{ width: '30px', height: '8px', alignSelf: isMe ? 'flex-end' : 'flex-start', borderRadius: '2px' }}></div>
+    </div>
+  );
+
   return (
-    <div className="dashboard-container" style={{ maxWidth: '1100px', gap: '20px' }}>
+    <div className="dashboard-container animate-fade-in" style={{ maxWidth: '1100px', padding: '24px' }}>
       
-      <button className="back-header" onClick={onBack}>
+      <style>{`
+        .chat-layout-container {
+          display: flex;
+          min-height: 600px;
+          max-height: 600px;
+          border: 1px solid var(--border-default);
+          border-radius: 12px;
+          overflow: hidden;
+          background-color: var(--bg-card);
+        }
+        .chat-sidebar {
+          width: 360px;
+          border-right: 1px solid var(--border-default);
+          display: flex;
+          flex-direction: column;
+          background-color: var(--bg-input);
+        }
+        .chat-window {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          background-color: var(--bg-card);
+        }
+        @media (max-width: 768px) {
+          .chat-layout-container {
+            min-height: 520px;
+            max-height: 520px;
+          }
+          .chat-sidebar {
+            width: 100% !important;
+            display: ${selectedTrip && mobileShowChat ? 'none !important' : 'flex !important'};
+          }
+          .chat-window {
+            width: 100% !important;
+            display: ${selectedTrip && mobileShowChat ? 'flex !important' : 'none !important'};
+            border-left: none !important;
+          }
+        }
+      `}</style>
+
+      {/* Settings back link */}
+      <button className="back-header" onClick={onBack} style={{ marginBottom: '16px' }}>
         <ArrowLeft size={16} />
-        <span>Settings</span>
+        <span className="text-page-title">Settings</span>
       </button>
 
-      <div style={{ display: 'flex', gap: '20px', minHeight: '600px', maxHeight: '600px', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
+      {/* Inline Error display */}
+      {errorMsg && (
+        <div className="feedback-alert feedback-error" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', marginBottom: '16px', borderRadius: '8px' }}>
+          <span className="text-body" style={{ color: '#f87171' }}>{errorMsg}</span>
+          <button className="btn-retry" onClick={fetchConversations}>
+            <RefreshCw size={12} />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
+      <div className="chat-layout-container">
         
         {/* Left Side: Conversations list */}
-        <div style={{ width: '360px', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-input)' }}>
-          <div style={{ padding: '18px', borderBottom: '1px solid var(--border-color)' }}>
-            <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>Conversations</h3>
+        <div className="chat-sidebar">
+          <div style={{ padding: '24px', borderBottom: '1px solid var(--border-default)' }}>
+            <h3 className="text-card-title" style={{ margin: 0 }}>Conversations</h3>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {loadingList ? (
-              <div style={{ padding: '20px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
-                <Loader2 className="animate-spin" size={20} style={{ margin: '0 auto 8px' }} />
-                Loading conversations...
-              </div>
+              <>
+                <ConversationSkeleton />
+                <ConversationSkeleton />
+                <ConversationSkeleton />
+              </>
             ) : conversations.length === 0 ? (
-              <div style={{ padding: '40px 20px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
-                No active or historical trip conversations found.
+              <div style={{ 
+                padding: '32px 24px', 
+                color: 'var(--text-label)', 
+                textAlign: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '12px',
+                marginTop: '32px'
+              }}>
+                <MessageSquare size={32} style={{ opacity: 0.5 }} />
+                <div>
+                  <h4 className="text-card-title" style={{ color: 'var(--text-primary)', marginBottom: '4px' }}>No active chats</h4>
+                  <p className="text-meta">Bookings and ride offers will automatically open a chat room here.</p>
+                </div>
               </div>
             ) : (
               conversations.map((trip) => {
@@ -182,13 +282,16 @@ export const Chat = ({ onBack, token, user }) => {
                 return (
                   <div
                     key={trip.id}
-                    onClick={() => setSelectedTrip(trip)}
+                    onClick={() => {
+                      setSelectedTrip(trip);
+                      setMobileShowChat(true);
+                    }}
                     style={{
-                      padding: '16px',
-                      borderBottom: '1px solid var(--border-color)',
+                      padding: '16px 24px',
+                      borderBottom: '1px solid var(--border-default)',
                       cursor: 'pointer',
-                      backgroundColor: isSelected ? 'rgba(15, 169, 88, 0.08)' : 'transparent',
-                      transition: 'background-color 0.2s',
+                      backgroundColor: isSelected ? 'rgba(13, 148, 136, 0.08)' : 'transparent',
+                      transition: 'background-color var(--transition-fast)',
                       display: 'flex',
                       gap: '12px',
                       alignItems: 'flex-start'
@@ -198,44 +301,47 @@ export const Chat = ({ onBack, token, user }) => {
                       width: '40px',
                       height: '40px',
                       borderRadius: '50%',
-                      backgroundColor: isSelected ? 'rgba(15,169,88,0.2)' : 'rgba(255,255,255,0.04)',
-                      color: isSelected ? 'var(--color-brand)' : 'var(--text-secondary)',
+                      backgroundColor: isSelected ? 'rgba(13,148,136,0.15)' : 'var(--bg-card)',
+                      color: isSelected ? 'var(--accent-teal)' : 'var(--text-secondary)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      flexShrink: 0
+                      flexShrink: 0,
+                      border: '1px solid var(--border-default)'
                     }}>
                       <User size={18} />
                     </div>
                     
                     <div style={{ flex: 1, overflow: 'hidden' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
-                        <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <h4 className="text-card-title" style={{ fontSize: '14px', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {partner}
                         </h4>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', flexShrink: 0 }}>
+                        <span className="text-meta" style={{ fontSize: '10px', flexShrink: 0 }}>
                           {trip.ride?.datetime ? new Date(trip.ride.datetime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''}
                         </span>
                       </div>
-
-                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Navigation size={10} style={{ color: 'var(--text-muted)' }} />
-                        {trip.ride?.pickupAddress} to {trip.ride?.destAddress}
+ 
+                      <div className="text-meta" style={{ marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Navigation size={10} style={{ color: 'var(--text-label)', flexShrink: 0 }} />
+                        <span>{trip.ride?.pickupAddress} to {trip.ride?.destAddress}</span>
                       </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+ 
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
                         <span style={{ 
                           fontSize: '9px', 
                           fontWeight: '700', 
-                          padding: '1px 5px', 
+                          padding: '2px 6px', 
                           borderRadius: '3px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
                           backgroundColor: trip.status === 'booked' ? 'rgba(59,130,246,0.15)' : (trip.status === 'completed' || trip.status === 'payment_completed' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'),
-                          color: trip.status === 'booked' ? '#3b82f6' : (trip.status === 'completed' || trip.status === 'payment_completed' ? 'var(--color-brand)' : '#f59e0b')
+                          color: trip.status === 'booked' ? '#3b82f6' : (trip.status === 'completed' || trip.status === 'payment_completed' ? 'var(--accent-teal)' : '#f59e0b')
                         }}>
                           {trip.status === 'payment_pending' ? 'Payment Pending' : trip.status}
                         </span>
                       </div>
-
+ 
                     </div>
                   </div>
                 );
@@ -245,35 +351,58 @@ export const Chat = ({ onBack, token, user }) => {
         </div>
 
         {/* Right Side: Chat Window */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-card)' }}>
+        <div className="chat-window">
           {selectedTrip ? (
             <>
               {/* Chat Header */}
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: 'var(--bg-input)' }}>
+                {/* Mobile Back to List Button */}
+                <button 
+                  onClick={() => setMobileShowChat(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    marginRight: '4px',
+                    display: 'none'
+                  }}
+                  className="mobile-back-chat"
+                >
+                  <style>{`
+                    @media (max-width: 768px) {
+                      .mobile-back-chat { display: inline-block !important; }
+                    }
+                  `}</style>
+                  <ArrowLeft size={18} />
+                </button>
+
+                <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <User size={16} />
                 </div>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                <div style={{ overflow: 'hidden' }}>
+                  <div className="text-card-title" style={{ fontSize: '15px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {getPartnerName(selectedTrip)}
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  <div className="text-meta" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {selectedTrip.ride?.pickupAddress} to {selectedTrip.ride?.destAddress}
                   </div>
                 </div>
               </div>
 
               {/* Chat Messages */}
-              <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ flex: 1, padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {loadingMessages ? (
-                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-muted)', fontSize: '13px' }}>
-                    <Loader2 className="animate-spin" size={16} style={{ marginRight: '6px' }} />
-                    Loading chat messages...
-                  </div>
+                  <>
+                    <MessageSkeleton isMe={false} />
+                    <MessageSkeleton isMe={true} />
+                    <MessageSkeleton isMe={false} />
+                  </>
                 ) : messages.length === 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', gap: '8px' }}>
-                    <MessageSquare size={24} style={{ opacity: 0.5 }} />
-                    <span style={{ fontSize: '13px' }}>No messages in this chat. Type below to start.</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-label)', gap: '12px' }}>
+                    <MessageSquare size={32} style={{ opacity: 0.4 }} />
+                    <span className="text-meta">No messages in this chat. Start typing below.</span>
                   </div>
                 ) : (
                   messages.map((msg) => {
@@ -295,17 +424,17 @@ export const Chat = ({ onBack, token, user }) => {
                             borderRadius: '12px',
                             borderTopRightRadius: isMe ? '2px' : '12px',
                             borderTopLeftRadius: isMe ? '12px' : '2px',
-                            backgroundColor: isMe ? 'var(--color-brand)' : 'var(--bg-input)',
-                            color: isMe ? 'white' : 'var(--text-primary)',
+                            backgroundColor: isMe ? 'var(--accent-teal-dark)' : 'var(--bg-input)',
+                            color: '#F1F5F9',
                             fontSize: '13px',
                             lineHeight: '1.4',
                             wordBreak: 'break-word',
-                            border: isMe ? 'none' : '1px solid var(--border-color)'
+                            border: isMe ? 'none' : '1px solid var(--border-default)'
                           }}
                         >
                           {msg.text}
                         </div>
-                        <span style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        <span className="text-meta" style={{ fontSize: '9px', marginTop: '4px' }}>
                           {formatTime(msg.createdAt)}
                         </span>
                       </div>
@@ -316,10 +445,10 @@ export const Chat = ({ onBack, token, user }) => {
               </div>
 
               {/* Message Input Form */}
-              <form onSubmit={handleSendMessage} style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '10px', backgroundColor: 'var(--bg-input)' }}>
+              <form onSubmit={handleSendMessage} style={{ padding: '16px 24px', borderTop: '1px solid var(--border-default)', display: 'flex', gap: '12px', backgroundColor: 'var(--bg-input)' }}>
                 <input
                   type="text"
-                  className="input-field"
+                  className="input-field text-body"
                   placeholder="Type a message..."
                   value={typedMessage}
                   onChange={e => setTypedMessage(e.target.value)}
@@ -328,7 +457,7 @@ export const Chat = ({ onBack, token, user }) => {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  style={{ height: '42px', width: '42px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                  style={{ height: '42px', width: '42px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, borderRadius: '8px' }}
                   disabled={!typedMessage.trim()}
                 >
                   <Send size={16} />
@@ -336,10 +465,10 @@ export const Chat = ({ onBack, token, user }) => {
               </form>
             </>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', gap: '12px', padding: '40px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-label)', gap: '12px', padding: '40px' }}>
               <MessageSquare size={48} style={{ opacity: 0.2 }} />
-              <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>Your Chats</div>
-              <div style={{ fontSize: '13px', textAlign: 'center', maxWidth: '300px', lineHeight: '1.5' }}>
+              <div className="text-card-title" style={{ fontSize: '15px' }}>Your Chats</div>
+              <div className="text-meta" style={{ textAlign: 'center', maxWidth: '300px', lineHeight: '1.5' }}>
                 Select a ride from the list on the left to message your driver or passengers.
               </div>
             </div>

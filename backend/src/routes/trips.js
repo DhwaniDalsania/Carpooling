@@ -115,8 +115,62 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
     } else if (status === 'cancelled') {
       updateData.completedAt = new Date();
       stopSimulation(id);
-      // Also cancel underlying ride so passengers can't keep booking it
-      await withRetry(() => prisma.ride.update({ where: { id: trip.rideId }, data: { status: 'cancelled' } }));
+
+      // Find the trip details including transactions and passengers
+      const tripWithDetails = await withRetry(() =>
+        prisma.trip.findUnique({
+          where: { id },
+          include: {
+            passengers: { include: { user: true } },
+            transactions: true
+          }
+        })
+      );
+
+      // Build refund operations for passengers who paid
+      const refundOps = [];
+      if (tripWithDetails) {
+        for (const { user: passenger } of tripWithDetails.passengers) {
+          const walletTxn = tripWithDetails.transactions.find(
+            (t) => t.userId === passenger.id && t.type === 'payment' && t.status === 'completed'
+          );
+          if (walletTxn) {
+            refundOps.push(
+              prisma.wallet.upsert({
+                where: { userId: passenger.id },
+                update: { balance: { increment: walletTxn.amount } },
+                create: { userId: passenger.id, balance: walletTxn.amount }
+              }),
+              prisma.transaction.create({
+                data: {
+                  userId: passenger.id,
+                  tripId: id,
+                  amount: walletTxn.amount,
+                  type: 'refund',
+                  method: 'wallet_refund',
+                  status: 'completed'
+                }
+              })
+            );
+          }
+        }
+      }
+
+      await withRetry(() =>
+        prisma.$transaction([
+          // Cancel the underlying ride
+          prisma.ride.update({ where: { id: trip.rideId }, data: { status: 'cancelled' } }),
+
+          // Cancel all confirmed bookings on this ride
+          prisma.booking.updateMany({
+            where: { rideId: trip.rideId, status: 'confirmed' },
+            data: { status: 'cancelled' }
+          }),
+
+          // Wallet refunds if any
+          ...refundOps
+        ])
+      );
     }
 
     const updatedTrip = await withRetry(() => prisma.trip.update({
@@ -177,25 +231,36 @@ router.delete('/:id/cancel', requireAuth, async (req, res) => {
       return res.status(403).json({ message: 'Only a passenger of this trip can cancel their booking.' });
     }
 
-    // Rule 3: Cannot cancel within 1 hour of departure
-    const departureTime = new Date(trip.ride?.datetime || trip.createdAt);
-    const hoursUntilDeparture = (departureTime.getTime() - Date.now()) / (1000 * 60 * 60);
-    if (hoursUntilDeparture < 1) {
-      return res.status(400).json({
-        message: 'Cancellation is not allowed within 1 hour of departure.'
-      });
+    // Rule 3: Cannot cancel within 1 hour of departure (bypassed in development mode for testing)
+    const isDev = process.env.NODE_ENV === 'development';
+    if (!isDev) {
+      const departureTime = new Date(trip.ride?.datetime || trip.createdAt);
+      const hoursUntilDeparture = (departureTime.getTime() - Date.now()) / (1000 * 60 * 60);
+      if (hoursUntilDeparture < 1) {
+        return res.status(400).json({
+          message: 'Cancellation is not allowed within 1 hour of departure.'
+        });
+      }
     }
+
+    // Find the passenger's confirmed booking to get seats booked
+    const booking = await withRetry(() =>
+      prisma.booking.findFirst({
+        where: { rideId: trip.rideId, passengerId: req.user.id, status: 'confirmed' }
+      })
+    );
 
     // Process refund: If passenger paid via wallet, refund them
     let refundedAmount = 0;
     if (trip.transactions.length > 0) {
       const paidAmount = trip.transactions.reduce((sum, t) => sum + t.amount, 0);
       if (paidAmount > 0) {
-        // Refund to wallet
+        // Refund to wallet (use upsert to be safe)
         await withRetry(() =>
-          prisma.wallet.update({
+          prisma.wallet.upsert({
             where: { userId: req.user.id },
-            data: { balance: { increment: paidAmount } }
+            update: { balance: { increment: paidAmount } },
+            create: { userId: req.user.id, balance: paidAmount }
           })
         );
         // Record refund transaction
@@ -224,21 +289,37 @@ router.delete('/:id/cancel', requireAuth, async (req, res) => {
       })
     );
 
-    // Restore seat availability on the ride
+    // Restore seat availability on the ride and revert status to active if it was full
+    const seatsToRestore = booking ? booking.seatsBooked : 1;
+    const currentRide = await withRetry(() => prisma.ride.findUnique({ where: { id: trip.rideId } }));
+    const newRideStatus = (currentRide && currentRide.status === 'full' && seatsToRestore > 0) ? 'active' : currentRide?.status;
+
     await withRetry(() =>
       prisma.ride.update({
         where: { id: trip.rideId },
-        data: { availableSeats: { increment: 1 } }
+        data: {
+          availableSeats: { increment: seatsToRestore },
+          status: newRideStatus
+        }
       })
     );
 
     // Also update booking record to cancelled
-    await withRetry(() =>
-      prisma.booking.updateMany({
-        where: { rideId: trip.rideId, passengerId: req.user.id },
-        data: { status: 'cancelled' }
-      })
-    );
+    if (booking) {
+      await withRetry(() =>
+        prisma.booking.update({
+          where: { id: booking.id },
+          data: { status: 'cancelled' }
+        })
+      );
+    } else {
+      await withRetry(() =>
+        prisma.booking.updateMany({
+          where: { rideId: trip.rideId, passengerId: req.user.id },
+          data: { status: 'cancelled' }
+        })
+      );
+    }
 
     return res.status(200).json({
       message: `Booking cancelled successfully.${refundedAmount > 0 ? ` ₹${refundedAmount} refunded to your wallet.` : ''}`,

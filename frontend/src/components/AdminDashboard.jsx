@@ -284,11 +284,11 @@ export const AdminDashboard = () => {
   };
 
   return (
-    <div className="app-container animate-fade-in" style={{ minHeight: '100vh', backgroundColor: '#05080f', color: '#f3f4f6' }}>
+    <div className="app-container animate-fade-in" style={{ minHeight: '100vh', backgroundColor: 'var(--bg-page)', color: '#f3f4f6' }}>
       {/* Admin Header */}
-      <header className="header-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 24px', backgroundColor: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)', height: '70px' }}>
+      <header className="header-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 24px', backgroundColor: 'var(--bg-card)', borderBottom: '1px solid var(--border-default)', height: '70px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Shield className="brand-logo" size={26} style={{ color: 'var(--color-brand)' }} />
+          <Shield className="brand-logo" size={26} style={{ color: 'var(--accent-teal)' }} />
           <div>
             <h1 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-primary)', margin: 0, letterSpacing: '0.5px' }}>Admin Dashboard</h1>
             <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600' }}>Organization Console</span>
@@ -317,7 +317,7 @@ export const AdminDashboard = () => {
           
           {/* Counters Row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-            <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '16px' }}>
               <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6' }}>
                 <Users size={22} />
               </div>
@@ -327,7 +327,7 @@ export const AdminDashboard = () => {
               </div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '16px' }}>
               <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-brand)' }}>
                 <Car size={22} />
               </div>
@@ -337,7 +337,7 @@ export const AdminDashboard = () => {
               </div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '16px' }}>
               <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: 'rgba(249, 115, 22, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f97316' }}>
                 <Navigation size={22} />
               </div>
@@ -349,7 +349,7 @@ export const AdminDashboard = () => {
           </div>
 
           {/* Tabs Selector Navigation */}
-          <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', gap: '24px', paddingBottom: '4px' }}>
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border-default)', gap: '24px', paddingBottom: '4px' }}>
             <button 
               onClick={() => setActiveTab('employees')}
               style={{ padding: '8px 12px', background: 'none', border: 'none', borderBottom: activeTab === 'employees' ? '2px solid var(--color-brand)' : 'none', color: activeTab === 'employees' ? 'var(--color-brand)' : 'var(--text-muted)', fontWeight: '700', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -396,10 +396,10 @@ export const AdminDashboard = () => {
                     <Loader2 className="animate-spin" size={28} />
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '12px', backgroundColor: 'var(--bg-card)' }}>
+                  <div style={{ overflowX: 'auto', border: '1px solid var(--border-default)', borderRadius: '12px', backgroundColor: 'var(--bg-card)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                       <thead>
-                        <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                        <tr style={{ borderBottom: '1px solid var(--border-default)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
                            <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontWeight: '700' }}>Name</th>
                           <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontWeight: '700' }}>Email</th>
                           <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontWeight: '700' }}>Department</th>
@@ -411,7 +411,7 @@ export const AdminDashboard = () => {
                       </thead>
                       <tbody>
                         {employees.map(emp => (
-                          <tr key={emp.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <tr key={emp.id} style={{ borderBottom: '1px solid var(--border-default)' }}>
                             <td style={{ padding: '14px 16px', fontWeight: '600', color: 'var(--text-primary)' }}>
                               {emp.name} 
                               {emp.role === 'admin' && (
@@ -464,10 +464,10 @@ export const AdminDashboard = () => {
                     <Loader2 className="animate-spin" size={28} />
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '12px', backgroundColor: 'var(--bg-card)' }}>
+                  <div style={{ overflowX: 'auto', border: '1px solid var(--border-default)', borderRadius: '12px', backgroundColor: 'var(--bg-card)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                       <thead>
-                        <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                        <tr style={{ borderBottom: '1px solid var(--border-default)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
                           <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontWeight: '700' }}>Registration Number</th>
                           <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontWeight: '700' }}>Vehicle Model</th>
                           <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontWeight: '700' }}>Seating Capacity</th>
@@ -477,7 +477,7 @@ export const AdminDashboard = () => {
                       </thead>
                       <tbody>
                         {vehicles.map(v => (
-                          <tr key={v.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <tr key={v.id} style={{ borderBottom: '1px solid var(--border-default)' }}>
                             <td style={{ padding: '14px 16px', fontWeight: '700', color: 'var(--text-primary)' }}>{v.registrationNumber}</td>
                             <td style={{ padding: '14px 16px', color: 'var(--text-secondary)' }}>{v.model}</td>
                             <td style={{ padding: '14px 16px', color: 'var(--text-secondary)' }}>{v.seatingCapacity} seats</td>
@@ -521,17 +521,18 @@ export const AdminDashboard = () => {
                 
                 {/* Organization Invite Code Card */}
                 <div style={{ 
-                  backgroundColor: 'rgba(255, 255, 255, 0.03)', 
-                  border: '1px solid var(--border-color)', 
+                  backgroundColor: 'var(--bg-card)', 
+                  border: '1px solid var(--border-default)', 
                   borderRadius: '12px', 
                   padding: '24px', 
                   display: 'flex', 
                   justifyContent: 'space-between', 
                   alignItems: 'center',
-                  marginBottom: '8px'
+                  marginBottom: '8px',
+                  boxShadow: 'var(--shadow-card)'
                 }}>
                   <div>
-                    <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--color-brand)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent-teal)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>
                       Organization Invite Code
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -565,7 +566,7 @@ export const AdminDashboard = () => {
 
                 {/* Section: Company Details */}
                 <div>
-                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--color-brand)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
+                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
                     Company Details
                   </h3>
                   
@@ -633,7 +634,7 @@ export const AdminDashboard = () => {
 
                 {/* Section: Carpooling Configurations */}
                 <div>
-                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--color-brand)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
+                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
                     Carpooling Configuration
                   </h3>
                   

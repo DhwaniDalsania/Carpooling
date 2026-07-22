@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 export const Header = ({ onProfileClick, currentTab, setCurrentTab, showTabs }) => {
   const { user, logout } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const menuRef = useRef(null);
 
   const tabs = [
@@ -28,14 +29,29 @@ export const Header = ({ onProfileClick, currentTab, setCurrentTab, showTabs }) 
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Monitor page scroll coordinates to trigger visual shadow header transition
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 10) {
+        setScrolled(true);
+      } else {
+        setScrolled(false);
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const placeholderAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E";
+
   return (
-    <header className="app-header">
+    <header className={`app-header ${scrolled ? 'scrolled' : ''}`}>
       {/* Brand logo & name */}
-      <div className="header-left">
+      <div className="header-left" onClick={() => setCurrentTab('dashboard')}>
         <span className="brand-logo">
           <Car size={32} strokeWidth={2.5} />
         </span>
-        <span className="brand-name">Carpooling</span>
+        <span className="brand-name">FindMeARide</span>
       </div>
 
       {/* Navigation tabs - visible on Dashboard */}
@@ -78,7 +94,12 @@ export const Header = ({ onProfileClick, currentTab, setCurrentTab, showTabs }) 
           </div>
           <div className="header-avatar-container">
             {user?.photoUrl ? (
-              <img src={user.photoUrl} alt={user.name} className="header-avatar-img" />
+              <img 
+                src={user.photoUrl} 
+                alt={user.name} 
+                className="header-avatar-img" 
+                onError={(e) => { e.currentTarget.src = placeholderAvatar; }}
+              />
             ) : (
               <User size={22} />
             )}

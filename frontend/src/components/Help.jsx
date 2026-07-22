@@ -71,7 +71,7 @@ export const Help = ({ onBack }) => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
           {/* FAQ Accordion */}
-          <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px' }}>
+          <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '12px', padding: '24px' }}>
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginTop: 0, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <HelpCircle size={18} style={{ color: 'var(--color-brand)' }} />
               Frequently Asked Questions
@@ -79,7 +79,7 @@ export const Help = ({ onBack }) => {
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {faqs.map((faq, i) => (
-                <div key={i} style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                <div key={i} style={{ border: '1px solid var(--border-default)', borderRadius: '8px', overflow: 'hidden' }}>
                   <button 
                     onClick={() => setOpenFaq(openFaq === i ? null : i)} 
                     style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px', background: openFaq === i ? 'rgba(15,169,88,0.06)' : 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
@@ -88,7 +88,7 @@ export const Help = ({ onBack }) => {
                     <ChevronDown size={14} style={{ color: 'var(--text-muted)', transform: openFaq === i ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }} />
                   </button>
                   {openFaq === i && (
-                    <div style={{ padding: '14px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', borderTop: '1px solid var(--border-color)', backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                    <div style={{ padding: '14px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', borderTop: '1px solid var(--border-default)', backgroundColor: 'rgba(255,255,255,0.01)' }}>
                       {faq.a}
                     </div>
                   )}
@@ -98,7 +98,7 @@ export const Help = ({ onBack }) => {
           </div>
 
           {/* Contact Details */}
-          <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px' }}>
+          <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: '12px', padding: '24px' }}>
             <h3 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginTop: 0, marginBottom: '16px' }}>
               Contact Support
             </h3>
@@ -139,7 +139,7 @@ export const Help = ({ onBack }) => {
         </div>
 
         {/* Right column: Report an Issue Form */}
-        <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px' }}>
+        <div style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-default)', borderRadius: '12px', padding: '24px' }}>
           <h3 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginTop: 0, marginBottom: '16px' }}>
             Report an Issue
           </h3>
